@@ -1006,8 +1006,8 @@ test_release_workflow_present() {
         return 1
     fi
     expect_file_contains "$wf" "sha256sum install.sh > install.sh.sha256" || return 1
-    expect_file_contains "$wf" "git tag -a" || return 1
     expect_file_contains "$wf" "gh release create" || return 1
+    expect_file_contains "$wf" "--target" || return 1
     expect_file_contains "$wf" "bash tests/run.sh" || return 1
     expect_file_contains "$ROOT_DIR/install.sh" 'ref_path="tags/' || return 1
 }

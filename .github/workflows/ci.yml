@@ -130,14 +130,20 @@ jobs:
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
-          git tag -a "$TAG" -m "osw $TAG"
-          git push origin "refs/tags/$TAG"
-
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --title "osw $VERSION" \
-              --generate-notes \
-              install.sh install.sh.sha256
+          # Tag dibuat lewat API (gh release create), bukan `git push refs/tags`:
+          # GITHUB_TOKEN adalah GitHub App tanpa izin `workflows`, sehingga push
+          # tag yang commit-nya memuat .github/workflows akan ditolak dengan
+          # "refusing to allow a GitHub App to create or update workflow".
+          # Commit sudah ada di main, jadi membuat ref lewat API aman.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG sudah ada; tidak ada yang perlu dibuat."
+            exit 0
           fi
+
+          gh release create "$TAG" \
+            --target "$(git rev-parse HEAD)" \
+            --title "osw $VERSION" \
+            --generate-notes \
+            install.sh install.sh.sha256
 
           echo "Rilis $TAG terbit."

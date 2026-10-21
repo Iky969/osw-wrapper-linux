@@ -262,6 +262,18 @@ Hasil run CI pertama (push `764b545`, 2026-10-21):
   padahal run sudah `completed`, dan push berikutnya tidak memunculkan run
   baru. Concurrency tingkat workflow dihapus agar tiap push berdiri sendiri.
 
+Hasil run kedua (push `997b086`, `fd48258`):
+
+- job tes hijau di runner non-root setelah `expect_dry`/`expect_dry_not`.
+- job rilis berjalan sampai membuat checksum, lalu gagal di `git push` tag:
+  `refusing to allow a GitHub App to create or update workflow
+  .github/workflows/ci.yml without workflows permission`. `GITHUB_TOKEN`
+  memang tidak punya izin `workflows`, dan push ref baru yang memuat file
+  workflow ditolak.
+- **Diperbaiki**: tag sekarang dibuat lewat GitHub Release API
+  (`gh release create --target <sha>`), bukan `git push refs/tags`. Commit-nya
+  sudah ada di `main`, jadi pembuatan ref lewat API tidak terkena batasan itu.
+
 Belum diverifikasi (butuh GitHub, di luar lingkungan ini):
 
 - job `release` benar-benar membuat tag/Release pada push berikutnya;

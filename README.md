@@ -250,9 +250,9 @@ otomatis; lihat `docs/ADDING-OS.md`.
    - memvalidasi `VERSION` berbentuk `X.Y.Z`;
    - menolak rilis kalau `DEFAULT_VERSION` di `install.sh` ≠ `VERSION`;
    - kalau tag `v<VERSION>` belum ada: menulis `install.sh.sha256`,
-     meng-commit-nya (`chore: checksum installer v<VERSION> [skip ci]`),
-     membuat annotated tag, lalu menerbitkan GitHub Release berisi aset
-     `install.sh` + `install.sh.sha256`;
+     meng-commit-nya (`chore: checksum installer v<VERSION> [skip ci]`), lalu
+     menerbitkan GitHub Release yang sekaligus membuat tag `v<VERSION>`
+     (aset: `install.sh` + `install.sh.sha256`);
    - kalau tag sudah ada: memastikan checksum yang di-commit masih cocok, dan
      gagal dengan pesan "naikkan VERSION" kalau `install.sh` berubah tanpa
      kenaikan versi.
@@ -277,8 +277,13 @@ memberi tahu bahwa tag `v<versi>` belum ada lalu memakai `main`.
 Catatan:
 
 - Job rilis butuh `permissions: contents: write`. Kalau branch `main` diproteksi,
-  izinkan GitHub Actions (atau bot) untuk push commit checksum dan tag, atau
-  jalankan workflow secara manual dari tab Actions (`workflow_dispatch`).
+  izinkan GitHub Actions (atau bot) untuk push commit checksum, atau jalankan
+  workflow secara manual dari tab Actions (`workflow_dispatch`).
+- Tag dibuat lewat GitHub Release API, bukan `git push refs/tags`. Alasannya:
+  `GITHUB_TOKEN` adalah GitHub App tanpa izin `workflows`, sehingga push tag
+  yang commit-nya memuat `.github/workflows/` ditolak dengan pesan
+  `refusing to allow a GitHub App to create or update workflow`. Membuat ref
+  lewat API tidak terkena batasan itu karena commit-nya sudah ada di `main`.
 - Rilis manual (tanpa CI) tetap mungkin, tetapi urutannya wajib: checksum
   di-commit **sebelum** tag dibuat.
 
