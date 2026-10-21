@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tes hermetik
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cek sintaks
+        run: bash -n bin/osw install.sh os/*.sh tests/*.sh
+
+      - name: ShellCheck
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq shellcheck
+          fi
+          shellcheck -S warning bin/osw install.sh os/*.sh tests/*.sh
+
+      - name: Tes unit & integrasi
+        run: bash tests/run.sh
+
+      - name: Smoke semua modul (stub)
+        run: bash tests/smoke.sh --stub
+
+      - name: Kontrak modul
+        run: bash tests/contract.sh
+
+  release:
+    name: Tag & rilis otomatis
+    needs: test
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - name: Checkout (lengkap, butuh tag)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Baca dan validasi VERSION
+        id: version
+        run: |
+          set -euo pipefail
+
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION tidak valid: '$version' (harus X.Y.Z)" >&2
+            exit 1
+          fi
+
+          default_version="$(sed -n 's/^DEFAULT_VERSION="\([^"]*\)"$/\1/p' install.sh | head -n1)"
+          if [[ "$default_version" != "$version" ]]; then
+            echo "DEFAULT_VERSION di install.sh ($default_version) != VERSION ($version)." >&2
+            echo "Samakan keduanya sebelum merge ke main." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Versi rilis: v$version"
+
+      - name: Cek apakah tag sudah ada
+        id: tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG sudah ada; rilis dilewati."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG belum ada; akan dibuat."
+          fi
+
+      - name: Pastikan checksum tag lama masih cocok
+        if: steps.tag.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          if [[ ! -f install.sh.sha256 ]]; then
+            echo "install.sh.sha256 tidak ada padahal tag sudah terbit." >&2
+            exit 1
+          fi
+          if ! sha256sum -c install.sh.sha256; then
+            echo "install.sh berubah tanpa kenaikan VERSION." >&2
+            echo "Naikkan VERSION (dan DEFAULT_VERSION di install.sh) untuk rilis baru." >&2
+            exit 1
+          fi
+
+      - name: Buat tag dan GitHub Release
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Checksum wajib ada di dalam tag: osw self-update menolak installer
+          # yang file .sha256-nya tidak tersedia atau tidak cocok.
+          sha256sum install.sh > install.sh.sha256
+          git add install.sh.sha256
+          if git diff --cached --quiet; then
+            echo "install.sh.sha256 sudah sesuai."
+          else
+            git commit -m "chore: checksum installer v$VERSION [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+          git tag -a "$TAG" -m "osw $TAG"
+          git push origin "refs/tags/$TAG"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "osw $VERSION" \
+              --generate-notes \
+              install.sh install.sh.sha256
+          fi
+
+          echo "Rilis $TAG terbit."

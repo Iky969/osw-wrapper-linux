@@ -116,7 +116,9 @@ dan config tetap XDG karena dispatcher menghitungnya dari XDG.
   dibaca `bin/osw` dan `install.sh`, supaya deteksi bisa diuji tanpa menyentuh
   `/etc`.
 - `OSW_UPSTREAM_REPO` / `OSW_UPSTREAM_REF` mengganti repo/ref unduhan installer
-  mode pipe dan `self-update`.
+  mode pipe (default ref: tag `v<DEFAULT_VERSION>`, fallback `main`).
+  `self-update` hanya memakai `OSW_UPSTREAM_REPO`; installernya selalu diambil
+  dari tag `v<VERSION>`.
 - Variabel `OSW_*` lain (`OSW_YES`, `OSW_DRY`, `OSW_QUIET`, `OSW_NO_COLOR`,
   `OSW_DEBUG`) diurus dispatcher dan diwariskan ke modul.
 

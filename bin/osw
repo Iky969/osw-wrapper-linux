@@ -9,7 +9,9 @@ set -euo pipefail
 PROJECT="osw"
 UPSTREAM_REPO="${OSW_UPSTREAM_REPO:-Iky969/osw-wrapper-linux}"
 UPSTREAM_VERSION_URL="https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/VERSION"
-UPSTREAM_URL="https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/install.sh"
+# Installer selalu diambil dari tag rilis (bukan main) supaya isi modul yang
+# dipasang sama dengan versi yang diumumkan.
+UPSTREAM_TAG_URL_TEMPLATE="https://raw.githubusercontent.com/${UPSTREAM_REPO}/v%s/install.sh"
 
 SCRIPT_PATH="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
@@ -392,14 +394,16 @@ do_detect() {
 }
 
 do_self_update() {
-    local target_ver="$VERSION"
-    local target_url="$UPSTREAM_URL"
+    local target_ver="${VERSION#v}"
 
     local fetched_ver=""
     if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
-        target_ver="$fetched_ver"
-        target_url="https://raw.githubusercontent.com/${UPSTREAM_REPO}/v${target_ver}/install.sh"
+        target_ver="${fetched_ver#v}"
     fi
+
+    local target_url
+    # shellcheck disable=SC2059
+    target_url="$(printf "$UPSTREAM_TAG_URL_TEMPLATE" "$target_ver")"
 
     local tmp_installer
     tmp_installer="$(mktemp)"

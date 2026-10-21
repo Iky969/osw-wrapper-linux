@@ -45,8 +45,27 @@ _sandbox_env() {
         XDG_CONFIG_HOME="$SB/cfg" \
         XDG_DATA_HOME="$SB/data" \
         XDG_BIN_HOME="$SB/bin" \
-        PATH="$TEST_PATH" \
+        PATH="${OSW_TEST_PATH:-$TEST_PATH}" \
         "$@"
+}
+
+# Jalankan osw dengan stub curl (tidak menyentuh network); setiap pemanggilan
+# curl dicatat ke $SB/curl.log lalu gagal dengan exit 22 seperti curl -f.
+osw_run_stub_curl() {
+    local stub_dir="$SB/curl-bin"
+    mkdir -p "$stub_dir"
+    {
+        printf '#!/usr/bin/env bash\n'
+        printf 'printf "%%s\\n" "$*" >>"$CURL_LOG"\n'
+        printf 'exit 22\n'
+    } >"$stub_dir/curl"
+    chmod +x "$stub_dir/curl"
+    CURL_LOG="$SB/curl.log"
+    : >"$CURL_LOG"
+    OSW_TEST_PATH="$stub_dir:$TEST_PATH" \
+        _sandbox_env CURL_LOG="$CURL_LOG" bash "$OSW" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
 }
 
 osw_run() {
@@ -917,6 +936,67 @@ test_smoke_real_debian() {
 }
 
 # -----------------------------------------------------------------------------
+# Rilis: checksum, tag, CI
+# -----------------------------------------------------------------------------
+# checksum yang di-commit harus selalu cocok dengan install.sh; kalau tidak,
+# instalasi dari tag akan gagal di "sha256sum -c" dan self-update ditolak.
+test_installer_checksum_matches() {
+    local sha_file="$ROOT_DIR/install.sh.sha256"
+    if [[ ! -f "$sha_file" ]]; then
+        _fail "install.sh.sha256 tidak ada"
+        return 1
+    fi
+    local expected actual
+    expected="$(awk 'NR==1 {print $1}' "$sha_file")"
+    actual="$(sha256sum "$ROOT_DIR/install.sh" | awk '{print $1}')"
+    if [[ "$actual" != "$expected" ]]; then
+        _fail "checksum kedaluwarsa (install.sh=$actual, file=$expected); jalankan: sha256sum install.sh > install.sh.sha256"
+        return 1
+    fi
+    expect_file_contains "$sha_file" "install.sh" || return 1
+}
+
+# CI menolak rilis kalau VERSION dan DEFAULT_VERSION di installer berbeda,
+# jadi tes ini menjaga keduanya tetap sinkron sebelum di-push.
+test_version_matches_installer_default() {
+    local version default
+    version="$(tr -d '[:space:]' <"$ROOT_DIR/VERSION")"
+    default="$(sed -n 's/^DEFAULT_VERSION="\([^"]*\)"$/\1/p' "$ROOT_DIR/install.sh" | head -n1)"
+    if [[ "$version" != "$default" ]]; then
+        _fail "VERSION ($version) != DEFAULT_VERSION ($default)"
+        return 1
+    fi
+}
+
+# self-update harus mengambil installer dari tag v<VERSION>, bukan dari main.
+test_self_update_uses_release_tag() {
+    prepare_debian_config
+    osw_run_stub_curl self-update
+    expect_rc 1 || return 1
+    expect_err "gagal mengunduh installer" || return 1
+    expect_file_contains "$SB/curl.log" "/v0.1.0/install.sh" || return 1
+    if grep -qF "/main/install.sh" "$SB/curl.log"; then
+        _fail "self-update masih mengunduh installer dari main"
+        return 1
+    fi
+}
+
+# Workflow rilis harus memuat semua langkah yang dibutuhkan agar tag yang
+# terbit selalu punya checksum dan Release.
+test_release_workflow_present() {
+    local wf="$ROOT_DIR/.github/workflows/ci.yml"
+    if [[ ! -f "$wf" ]]; then
+        _fail "workflow .github/workflows/ci.yml tidak ada"
+        return 1
+    fi
+    expect_file_contains "$wf" "sha256sum install.sh > install.sh.sha256" || return 1
+    expect_file_contains "$wf" "git tag -a" || return 1
+    expect_file_contains "$wf" "gh release create" || return 1
+    expect_file_contains "$wf" "bash tests/run.sh" || return 1
+    expect_file_contains "$ROOT_DIR/install.sh" 'ref_path="tags/' || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -1022,6 +1102,12 @@ run_test "contract menolak modul tidak lengkap" test_contract_rejects_missing_fu
 run_test "contract menolak set -e di modul"   test_contract_rejects_own_parser
 run_test "smoke --stub semua modul"           test_smoke_stub_all_modules
 run_test "smoke debian (dry-run asli)"        test_smoke_real_debian
+
+printf -- '\n--- Rilis: checksum, tag, CI ---\n'
+run_test "checksum install.sh cocok"          test_installer_checksum_matches
+run_test "VERSION == DEFAULT_VERSION"         test_version_matches_installer_default
+run_test "self-update ambil installer tag"    test_self_update_uses_release_tag
+run_test "workflow rilis otomatis lengkap"    test_release_workflow_present
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 

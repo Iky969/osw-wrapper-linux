@@ -9,8 +9,11 @@ set -euo pipefail
 
 PROJECT="osw"
 UPSTREAM_REPO="${OSW_UPSTREAM_REPO:-Iky969/osw-wrapper-linux}"
-UPSTREAM_REF="${OSW_UPSTREAM_REF:-main}"
 DEFAULT_VERSION="0.1.0"
+# Ref sumber untuk mode pipe. Default-nya tag rilis yang cocok dengan
+# DEFAULT_VERSION, supaya modul yang dipasang sama persis dengan installer
+# yang dipiping. Set OSW_UPSTREAM_REF=main untuk mencoba kode pengembangan.
+UPSTREAM_REF="${OSW_UPSTREAM_REF:-v$DEFAULT_VERSION}"
 
 # -----------------------------------------------------------------------------
 # 1. Lokasi sumber
@@ -67,7 +70,7 @@ Contoh:
   bash install.sh
   bash install.sh --os debian --no-path-hint
   bash install.sh --uninstall -y
-  curl -fsSL https://raw.githubusercontent.com/$UPSTREAM_REPO/$UPSTREAM_REF/install.sh | bash
+  curl -fsSL https://github.com/$UPSTREAM_REPO/releases/latest/download/install.sh | bash
 EOF
 }
 
@@ -279,6 +282,17 @@ _cleanup() {
 }
 trap _cleanup EXIT
 
+# Unduh snapshot repo untuk satu ref (tags/<tag> atau heads/<branch>).
+_extract_ref() {
+    local ref_path="$1"
+    local url="https://codeload.github.com/${UPSTREAM_REPO}/tar.gz/refs/${ref_path}"
+    if [[ -n "$TMP_SRC" && -d "$TMP_SRC" ]]; then
+        rm -rf "$TMP_SRC"
+    fi
+    TMP_SRC="$(mktemp -d "${TMPDIR:-/tmp}/osw-install.XXXXXX")"
+    curl -fsSL "$url" | tar -xz -C "$TMP_SRC" --strip-components=1
+}
+
 fetch_sources() {
     if ! command -v curl >/dev/null 2>&1; then
         die "curl tidak ditemukan; jalankan installer dari clone repo: bash install.sh"
@@ -287,13 +301,29 @@ fetch_sources() {
         die "tar tidak ditemukan; jalankan installer dari clone repo: bash install.sh"
     fi
 
-    TMP_SRC="$(mktemp -d "${TMPDIR:-/tmp}/osw-install.XXXXXX")"
-    local url="https://codeload.github.com/${UPSTREAM_REPO}/tar.gz/refs/heads/${UPSTREAM_REF}"
+    local ref_path
+    case "$UPSTREAM_REF" in
+        v[0-9]*) ref_path="tags/$UPSTREAM_REF" ;;
+        *) ref_path="heads/$UPSTREAM_REF" ;;
+    esac
+
     _info "Installer dijalankan lewat pipe; mengunduh sumber ${UPSTREAM_REPO}@${UPSTREAM_REF}..."
-    if ! curl -fsSL "$url" | tar -xz -C "$TMP_SRC" --strip-components=1; then
-        die "gagal mengunduh sumber dari $url (butuh network; alternatif: git clone lalu bash install.sh)"
+    if _extract_ref "$ref_path"; then
+        SRC="$TMP_SRC"
+        return 0
     fi
-    SRC="$TMP_SRC"
+
+    # Tag rilis belum terbit (mis. VERSION baru dinaikkan tapi CI belum
+    # membuat tag). Pakai main supaya tidak buntu, dengan peringatan jelas.
+    if [[ "$ref_path" == "tags/v$DEFAULT_VERSION" ]]; then
+        _info "Tag v$DEFAULT_VERSION belum terbit; memakai main (tidak dipin ke rilis)."
+        if _extract_ref "heads/main"; then
+            SRC="$TMP_SRC"
+            return 0
+        fi
+    fi
+
+    die "gagal mengunduh sumber ${UPSTREAM_REPO}@${UPSTREAM_REF} (butuh network; alternatif: git clone lalu bash install.sh)"
 }
 
 if [[ -z "$SRC" ]]; then

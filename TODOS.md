@@ -22,7 +22,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 6 | `os/gentoo.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
-| 9 | README, docs, rilis | dokumen selesai | manual: periksa isi dokumen; **tag v0.1.0 + `install.sh.sha256` belum diterbitkan** (butuh push, di luar sesi ini) |
+| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow (4 tes); **workflow belum pernah berjalan di GitHub** — tag `v0.1.0` akan dibuat CI pada push pertama |
 
 ## Detail Fase 0-2
 
@@ -225,11 +225,35 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
   container, dan jebakan yang sudah ditemukan (`pacman -y`, `emerge --info`,
   `apk` tanpa `-y`, `pacman -Qtdq` exit 1).
 
-Belum dikerjakan (butuh push/rilis, tidak dilakukan tanpa izin eksplisit):
+### Rilis otomatis (lanjutan Fase 9)
 
-- membuat dan mendorong tag `v0.1.0`;
-- menerbitkan `install.sh.sha256` di tag tersebut, yang **wajib** agar
-  `osw self-update` bisa berjalan (lihat item terbuka 1).
+- `.github/workflows/ci.yml`:
+  - job `test` pada setiap push ke `main` + pull request: `bash -n`,
+    `shellcheck -S warning`, `tests/run.sh`, `tests/smoke.sh --stub`,
+    `tests/contract.sh`.
+  - job `release` (butuh `test` hijau, hanya push `main` atau
+    `workflow_dispatch`): validasi `VERSION` (`X.Y.Z`) dan
+    `DEFAULT_VERSION` di `install.sh`, lewati kalau tag `v<VERSION>` sudah ada
+    (tapi verifikasi checksum-nya), kalau belum: tulis
+    `install.sh.sha256`, commit `[skip ci]`, buat annotated tag, push tag,
+    lalu `gh release create` dengan aset `install.sh` + `install.sh.sha256`.
+  - Perlu `permissions: contents: write`; branch protection harus mengizinkan
+    bot Actions push commit checksum + tag, atau jalankan manual lewat
+    `workflow_dispatch`.
+- `install.sh.sha256` di-commit di root repo supaya tag pertama langsung
+  punya checksum dan `osw self-update` tidak pernah melihat tag tanpa
+  `.sha256`.
+- `install.sh` mode pipe sekarang mengunduh snapshot **tag** `v$DEFAULT_VERSION`
+  (fallback ke `main` dengan peringatan kalau tag belum terbit);
+  `bin/osw self-update` memakai URL tag, bukan `main`.
+- `README.md` ditulis ulang: instalasi (latest release, checksum, clone),
+  tabel perintah, contoh alur pemakaian, update/uninstall, config, tabel OS,
+  tes, cara kerja CI + cara merilis versi baru, dan troubleshooting.
+
+Belum diverifikasi (butuh GitHub, di luar lingkungan ini):
+
+- job `release` benar-benar membuat tag/Release pada push pertama;
+- izin `contents: write` pada repo asli (branch protection, Actions token).
 
 ## Item terbuka
 
@@ -256,14 +280,18 @@ Belum dikerjakan (butuh push/rilis, tidak dilakukan tanpa izin eksplisit):
 
 ### 2. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 41 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
-  self-update, dan 21 tes Fase 3.
-- Fase 8 (`tests/smoke.sh`, `tests/contract.sh`, 4 container) belum dikerjakan.
-  `tests/run.sh` dirancang agar bisa ditambah.
+- `tests/run.sh` berisi 61 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+  self-update, 21 tes Fase 3, 11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8,
+  dan 4 tes rilis (checksum, `VERSION` == `DEFAULT_VERSION`, `self-update`
+  memakai tag, kelengkapan workflow).
+- Smoke di 4 container nyata belum dijalankan; lihat `tests/smoke.sh` dan
+  `docs/ADDING-OS.md`.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
   (lingkungan kerja ini Ubuntu 22.04, dijalankan sebagai root di container).
-- Mode pipe baru diuji pada jalur gagal (network diblokir via proxy); jalur
-  unduh + install sukses belum diuji.
+- Mode pipe baru diuji pada jalur gagal (network diblokir via stub/ proxy);
+  jalur unduh + install sukses belum diuji.
+- Workflow CI baru divalidasi secara lokal (YAML di-parse, langkah
+  baca-`VERSION` dijalankan, `shellcheck` 0 warning); belum ada run sungguhan.
 
 ## Riwayat langkah
 
@@ -291,4 +319,6 @@ Belum dikerjakan (butuh push/rilis, tidak dilakukan tanpa izin eksplisit):
   `tests/smoke.sh`, integrasi ke `tests/run.sh` (57 tes total, 57 lulus).
 - `docs(fase9): README, kontrak modul, panduan modul baru` — `README.md`,
   `docs/CONTRACT.md`, `docs/ADDING-OS.md` (57 tes tetap hijau).
-- Sisa: terbitkan tag `v0.1.0` + `install.sh.sha256` (butuh push).
+- `ci: rilis otomatis (tag + checksum + Release)` — `.github/workflows/ci.yml`,
+  `install.sh.sha256`, mode pipe `install.sh` dipin ke tag, `self-update`
+  memakai URL tag, README ditulis ulang (61 tes lulus).
