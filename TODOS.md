@@ -22,7 +22,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 6 | `os/gentoo.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
-| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow (4 tes); **workflow belum pernah berjalan di GitHub** — tag `v0.1.0` akan dibuat CI pada push pertama |
+| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow + regresi installer file tunggal; **terverifikasi di GitHub**: run `74e2ed8` sukses dan CI membuat tag + Release `v0.1.0`; `v0.1.1` (perbaikan self-update) menunggu run CI |
 
 ## Detail Fase 0-2
 
@@ -262,6 +262,15 @@ Hasil run CI pertama (push `764b545`, 2026-10-21):
   padahal run sudah `completed`, dan push berikutnya tidak memunculkan run
   baru. Concurrency tingkat workflow dihapus agar tiap push berdiri sendiri.
 
+Hasil run sukses (push `74e2ed8`):
+
+- seluruh job hijau; job rilis membuat tag `v0.1.0` + Release berisi aset
+  `install.sh` dan `install.sh.sha256` (diverifikasi lewat API dan unduhan:
+  `sha256sum -c` cocok, mode pipe `releases/latest/download/install.sh`
+  memasang 0.1.0 dengan sumber dari tag `v0.1.0`).
+- Catatan: daftar run di API GitHub terlambat tampil beberapa menit; tag tetap
+  bisa dicek langsung dengan `git ls-remote --tags`.
+
 Hasil run kedua (push `997b086`, `fd48258`):
 
 - job tes hijau di runner non-root setelah `expect_dry`/`expect_dry_not`.
@@ -274,9 +283,27 @@ Hasil run kedua (push `997b086`, `fd48258`):
   (`gh release create --target <sha>`), bukan `git push refs/tags`. Commit-nya
   sudah ada di `main`, jadi pembuatan ref lewat API tidak terkena batasan itu.
 
+### 3. BUG (Fase 1): `osw self-update` 0.1.0 gagal saat menjalankan installer — TERVERIFIKASI & DIPERBAIKI (0.1.1)
+
+- Reproduksi: pasang 0.1.0 dari Release ke direktori sementara, lalu
+  `osw -y self-update` → `install.sh: error: dispatcher tidak ditemukan:
+  /tmp/bin/osw` (exit 1). Checksum lolos; yang gagal adalah installer.
+- Penyebab: `self-update` menjalankan installer dari file sementara
+  (`bash "$tmp_installer"`), sehingga `BASH_SOURCE` menunjuk `/tmp` yang tidak
+  punya `bin/osw` maupun `os/`. Installer mengira sedang di clone repo, lalu
+  preflight menolak.
+- Status: **diperbaiki** di `install.sh` — sumber diunduh kalau direktori
+  installer tidak memuat `bin/osw` atau `os/`. Regresi dijaga tes
+  "installer file tunggal unduh sumber" (network diblokir, harus sampai ke
+  "gagal mengunduh", bukan "dispatcher tidak ditemukan").
+- Karena `install.sh` berubah, `VERSION` dinaikkan ke **0.1.1** (tag `v0.1.0`
+  sudah terbit; memperbarui tag lama akan memutus checksum yang sudah
+  diumumkan). Pengguna 0.1.0 perlu sekali menjalankan ulang installer rilis
+  0.1.1 karena `self-update` di versi lama tidak bisa memperbaiki dirinya.
+
 Belum diverifikasi (butuh GitHub, di luar lingkungan ini):
 
-- job `release` benar-benar membuat tag/Release pada push berikutnya;
+- job `release` pada push `v0.1.1` (tag + Release baru);
 - izin `contents: write` pada repo asli (branch protection, Actions token).
 
 ## Item terbuka
@@ -304,10 +331,10 @@ Belum diverifikasi (butuh GitHub, di luar lingkungan ini):
 
 ### 2. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 61 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+- `tests/run.sh` berisi 62 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
   self-update, 21 tes Fase 3, 11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8,
-  dan 4 tes rilis (checksum, `VERSION` == `DEFAULT_VERSION`, `self-update`
-  memakai tag, kelengkapan workflow).
+  dan 5 tes rilis (checksum, `VERSION` == `DEFAULT_VERSION`, `self-update`
+  memakai tag, installer file tunggal mengunduh sumber, kelengkapan workflow).
 - Smoke di 4 container nyata belum dijalankan; lihat `tests/smoke.sh` dan
   `docs/ADDING-OS.md`.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu

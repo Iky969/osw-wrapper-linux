@@ -9,7 +9,7 @@ set -euo pipefail
 
 PROJECT="osw"
 UPSTREAM_REPO="${OSW_UPSTREAM_REPO:-Iky969/osw-wrapper-linux}"
-DEFAULT_VERSION="0.1.0"
+DEFAULT_VERSION="0.1.1"
 # Ref sumber untuk mode pipe. Default-nya tag rilis yang cocok dengan
 # DEFAULT_VERSION, supaya modul yang dipasang sama persis dengan installer
 # yang dipiping. Set OSW_UPSTREAM_REF=main untuk mencoba kode pengembangan.
@@ -326,7 +326,10 @@ fetch_sources() {
     die "gagal mengunduh sumber ${UPSTREAM_REPO}@${UPSTREAM_REF} (butuh network; alternatif: git clone lalu bash install.sh)"
 }
 
-if [[ -z "$SRC" ]]; then
+# Installer yang dijalankan dari file tunggal (mis. hasil unduhan
+# `osw self-update` di direktori sementara) tidak punya bin/ dan os/ di
+# sebelahnya; dalam kasus itu sumber harus diunduh seperti mode pipe.
+if [[ -z "$SRC" || ! -f "$SRC/bin/osw" || ! -d "$SRC/os" ]]; then
     fetch_sources
 fi
 

@@ -15,6 +15,9 @@ set -uo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 OSW="$ROOT_DIR/bin/osw"
 INSTALLER="$ROOT_DIR/install.sh"
+# Versi yang sedang diuji; jangan hardcode di assert supaya naik VERSION tidak
+# mematahkan tes.
+TEST_VERSION="$(tr -d '[:space:]' <"$ROOT_DIR/VERSION")"
 
 # PATH tetap supaya hasil tidak bergantung PATH pemanggil.
 TEST_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -138,7 +141,7 @@ installer_pipe_run() {
 # Siapkan ~/.config/osw/os.conf + modul debian di data dir sandbox.
 prepare_debian_config() {
     mkdir -p "$SB/cfg/osw" "$SB/data/osw/os"
-    printf 'OS=debian\nINSTALLED_AT=2026-01-01T00:00:00Z\nVERSION=0.1.0\n' \
+    printf 'OS=debian\nINSTALLED_AT=2026-01-01T00:00:00Z\nVERSION=%s\n' "$TEST_VERSION" \
         >"$SB/cfg/osw/os.conf"
     cp "$ROOT_DIR/os/debian.sh" "$SB/data/osw/os/debian.sh"
 }
@@ -298,7 +301,7 @@ test_unknown_subcommand() {
 test_version_without_config() {
     osw_run version
     expect_rc 0 || return 1
-    expect_out "osw 0.1.0" || return 1
+    expect_out "osw $TEST_VERSION" || return 1
 }
 
 test_status_without_config() {
@@ -315,7 +318,7 @@ test_detect_writes_config() {
     expect_file_matches "$SB/cfg/osw/os.conf" '^OS=(debian|void|alpine|gentoo|arch|unknown)$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^OS_NAME=.+$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=.+$' || return 1
-    expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=0.1.0" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=$TEST_VERSION" || return 1
 }
 
 test_dry_run_install_without_config() {
@@ -460,13 +463,13 @@ test_installer_debian() {
     expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^OS_NAME=.+$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T' || return 1
-    expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=0.1.0" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=$TEST_VERSION" || return 1
     expect_exec "$SB/bin/osw" || return 1
     expect_file "$SB/data/osw/os/debian.sh" || return 1
 
     bin_run "$SB/bin/osw" version
     expect_rc 0 || return 1
-    expect_out "osw 0.1.0 (OS=debian)" || return 1
+    expect_out "osw $TEST_VERSION (OS=debian)" || return 1
 
     bin_run "$SB/bin/osw" status
     expect_rc 0 || return 1
@@ -986,11 +989,14 @@ test_version_matches_installer_default() {
 
 # self-update harus mengambil installer dari tag v<VERSION>, bukan dari main.
 test_self_update_uses_release_tag() {
+    local version
+    version="$(tr -d '[:space:]' <"$ROOT_DIR/VERSION")"
+
     prepare_debian_config
     osw_run_stub_curl self-update
     expect_rc 1 || return 1
     expect_err "gagal mengunduh installer" || return 1
-    expect_file_contains "$SB/curl.log" "/v0.1.0/install.sh" || return 1
+    expect_file_contains "$SB/curl.log" "/v$version/install.sh" || return 1
     if grep -qF "/main/install.sh" "$SB/curl.log"; then
         _fail "self-update masih mengunduh installer dari main"
         return 1
@@ -999,6 +1005,26 @@ test_self_update_uses_release_tag() {
 
 # Workflow rilis harus memuat semua langkah yang dibutuhkan agar tag yang
 # terbit selalu punya checksum dan Release.
+# Regresi: `osw self-update` menjalankan installer dari file sementara tanpa
+# repo di sebelahnya. Dulu preflight menolak dengan "dispatcher tidak
+# ditemukan"; sekarang installer harus mengunduh snapshot repo.
+test_installer_lone_file_downloads_sources() {
+    local lone="$SB/lone"
+    mkdir -p "$lone"
+    cp "$INSTALLER" "$lone/install.sh"
+    _sandbox_env \
+        https_proxy="http://127.0.0.1:9" \
+        http_proxy="http://127.0.0.1:9" \
+        bash "$lone/install.sh" --no-path-hint >"$OUT" 2>"$ERR"
+    RC=$?
+    expect_rc 1 || return 1
+    expect_err "gagal mengunduh" || return 1
+    if grep -qF "dispatcher tidak ditemukan" "$ERR"; then
+        _fail "installer file tunggal tidak mengunduh sumber repo"
+        return 1
+    fi
+}
+
 test_release_workflow_present() {
     local wf="$ROOT_DIR/.github/workflows/ci.yml"
     if [[ ! -f "$wf" ]]; then
@@ -1123,6 +1149,7 @@ printf -- '\n--- Rilis: checksum, tag, CI ---\n'
 run_test "checksum install.sh cocok"          test_installer_checksum_matches
 run_test "VERSION == DEFAULT_VERSION"         test_version_matches_installer_default
 run_test "self-update ambil installer tag"    test_self_update_uses_release_tag
+run_test "installer file tunggal unduh sumber" test_installer_lone_file_downloads_sources
 run_test "workflow rilis otomatis lengkap"    test_release_workflow_present
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"

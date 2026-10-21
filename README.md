@@ -152,6 +152,10 @@ dan `install.sh.sha256` dari tag `v<VERSION>`, mencocokkan SHA-256, baru
 menjalankannya. Tidak ada jalur "paksa tanpa checksum": kalau file `.sha256`
 tidak ada atau tidak cocok, pembaruan dibatalkan dengan exit code 1.
 
+> Versi 0.1.0 rusak di langkah ini (`dispatcher tidak ditemukan: /tmp/bin/osw`).
+> Kalau Anda masih di 0.1.0, jalankan sekali installer rilis terbaru
+> (perintah "Cara tercepat" di atas) — setelah itu `self-update` berfungsi.
+
 ### Uninstall
 
 ```sh
@@ -174,7 +178,7 @@ bash install.sh --uninstall -y
 OS=debian
 OS_NAME=Debian\ GNU/Linux\ 12\ \(bookworm\)
 INSTALLED_AT=2026-10-21T06:01:13Z
-VERSION=0.1.0
+VERSION=0.1.1
 ```
 
 - `OS` adalah *family* yang dipakai memilih `os/$OS.sh`. Nilainya hanya
