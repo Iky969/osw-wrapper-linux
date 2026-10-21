@@ -250,9 +250,21 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
   tabel perintah, contoh alur pemakaian, update/uninstall, config, tabel OS,
   tes, cara kerja CI + cara merilis versi baru, dan troubleshooting.
 
+Hasil run CI pertama (push `764b545`, 2026-10-21):
+
+- `bash -n` + `shellcheck -S warning` + `bash tests/run.sh` di runner lolos,
+  tetapi 5 tes modul gagal: runner berjalan sebagai non-root, sehingga `_priv`
+  menambahkan prefix `sudo ` pada baris `DRY:` (sesuai blueprint) dan string
+  yang di-assert tidak cocok.
+- **Diperbaiki**: `expect_dry`/`expect_dry_not` di `tests/run.sh` mengabaikan
+  prefix `sudo`/`doas`, jadi hasil tes sama untuk root maupun non-root.
+- Efek samping: run pertama tersebut menyisakan job berstatus `in_progress`
+  padahal run sudah `completed`, dan push berikutnya tidak memunculkan run
+  baru. Concurrency tingkat workflow dihapus agar tiap push berdiri sendiri.
+
 Belum diverifikasi (butuh GitHub, di luar lingkungan ini):
 
-- job `release` benar-benar membuat tag/Release pada push pertama;
+- job `release` benar-benar membuat tag/Release pada push berikutnya;
 - izin `contents: write` pada repo asli (branch protection, Actions token).
 
 ## Item terbuka
