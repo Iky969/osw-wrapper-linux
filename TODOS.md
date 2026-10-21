@@ -18,7 +18,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 2 | `os/debian.sh` | selesai (16 fungsi) | otomatis: hanya mode `-n` (dry-run); **eksekusi apt nyata belum diuji** |
 | 3 | `install.sh` | selesai (11 poin blueprint + config 4 baris) | otomatis: 21 tes Fase 3; mode pipe lewat network belum diuji |
 | 4 | `os/void.sh` | selesai (14 fungsi) | otomatis: mode `-n` untuk semua aksi + `autoclean` -> 3; **XBPS nyata belum diuji** |
-| 5 | `os/alpine.sh` | belum | — |
+| 5 | `os/alpine.sh` | selesai (13 fungsi) | otomatis: mode `-n`, `autoremove` no-op, `orphans`/`autoclean`/`list --user` -> 3; **apk nyata belum diuji** |
 | 6 | `os/gentoo.sh` | belum | — |
 | 7 | `os/arch.sh` (opsional) | belum | — |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | belum | — |
@@ -132,6 +132,21 @@ fallback dispatcher mengembalikan 3 — diuji.
 Belum diuji: eksekusi XBPS sungguhan (butuh container Void); semua uji memakai
 `OSW_DRY=1`.
 
+## Detail Fase 5 — `os/alpine.sh`
+
+Selesai. Flag non-interaktif memakai `--no-interactive` (apk tidak punya `-y`).
+update `apk update`, upgrade & full-upgrade `apk upgrade` (Alpine tidak
+memisahkannya), install `apk add`, remove `apk del`, search `apk search`,
+info `apk info -a`, list `apk info` (`--repo` -> `apk list --installed`),
+files `apk info -L`, owner `apk info --who-owns`, autoremove no-op dengan pesan
+(apk sudah membersihkan dependensi saat `apk del`), clean `apk cache clean`.
+
+Sengaja tidak didukung (fallback dispatcher, exit 3): `orphans`, `autoclean`,
+dan `list --user` (apk tidak mencatat instalasi manual; mengembalikan daftar
+semua paket akan menyesatkan).
+
+Belum diuji: eksekusi apk sungguhan (butuh container Alpine).
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
@@ -179,4 +194,7 @@ Belum diuji: eksekusi XBPS sungguhan (butuh container Void); semua uji memakai
 - `feat(fase4): modul void (XBPS)` — `os/void.sh`, tes dry-run + fallback
   `autoclean`, tes preflight "modul belum tersedia" dibuat independen dari
   modul yang ada (43 tes total, 43 lulus).
-- Berikutnya: Fase 5 (`os/alpine.sh`).
+- `feat(fase5): modul alpine (apk)` — `os/alpine.sh`, tes dry-run + no-op
+  `autoremove` + fitur tidak didukung; tes `--redetect` memakai repo tanpa
+  modul alpine agar tidak bergantung pada modul yang sudah ada (46 lulus).
+- Berikutnya: Fase 6 (`os/gentoo.sh`).

@@ -151,6 +151,15 @@ installer_run_alt() {
     return 0
 }
 
+installer_run_alt_osrel() {
+    local script="$1"
+    local rel="$2"
+    shift 2
+    _sandbox_env OSW_OS_RELEASE="$rel" bash "$script" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
 # -----------------------------------------------------------------------------
 # Assertion
 # -----------------------------------------------------------------------------
@@ -514,9 +523,11 @@ test_installer_redetect_reevaluates_os() {
         >"$SB/cfg/osw/os.conf"
     write_os_release "$SB/os-release" "alpine" "Alpine Linux"
 
-    # Family jadi alpine; modul alpine belum ada -> harus gagal, bukan mencoba
-    # modul lain. Config lama tidak boleh rusak.
-    installer_run_osrel "$SB/os-release" --redetect --no-path-hint
+    # Family jadi alpine; repo uji sengaja tidak punya modul alpine -> harus
+    # gagal, bukan mencoba modul lain. Config lama tidak boleh rusak.
+    local repo=""
+    repo="$(repo_without_module alpine)"
+    installer_run_alt_osrel "$repo/install.sh" "$SB/os-release" --redetect --no-path-hint
     expect_rc 1 || return 1
     expect_err "modul untuk OS=alpine belum tersedia" || return 1
     expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
@@ -653,6 +664,69 @@ test_void_autoclean_unsupported() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase 5: modul alpine (apk)
+# -----------------------------------------------------------------------------
+test_alpine_dry_run() {
+    installer_run --os alpine --no-path-hint
+    expect_rc 0 || return 1
+    expect_file "$SB/data/osw/os/alpine.sh" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=alpine" || return 1
+
+    bin_run "$SB/bin/osw" -n install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: apk add neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n -y install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: apk add --no-interactive neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n remove neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: apk del neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n update
+    expect_rc 0 || return 1
+    expect_out "DRY: apk update" || return 1
+
+    bin_run "$SB/bin/osw" -n upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: apk upgrade" || return 1
+
+    bin_run "$SB/bin/osw" -n full-upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: apk upgrade" || return 1
+
+    bin_run "$SB/bin/osw" -n clean
+    expect_rc 0 || return 1
+    expect_out "DRY: apk cache clean" || return 1
+}
+
+test_alpine_autoremove_noop() {
+    installer_run --os alpine --no-path-hint
+    expect_rc 0 || return 1
+    bin_run "$SB/bin/osw" autoremove
+    expect_rc 0 || return 1
+    expect_out "apk otomatis membersihkan dependensi" || return 1
+}
+
+test_alpine_unsupported_features() {
+    installer_run --os alpine --no-path-hint
+    expect_rc 0 || return 1
+
+    bin_run "$SB/bin/osw" orphans
+    expect_rc 3 || return 1
+    expect_err "fitur orphans belum didukung untuk OS=alpine" || return 1
+
+    bin_run "$SB/bin/osw" autoclean
+    expect_rc 3 || return 1
+    expect_err "fitur autoclean belum didukung untuk OS=alpine" || return 1
+
+    bin_run "$SB/bin/osw" list --user
+    expect_rc 3 || return 1
+    expect_err "list --user belum didukung untuk OS=alpine" || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -736,6 +810,11 @@ run_test "installer mode pipe tanpa network"    test_installer_pipe_mode_without
 printf -- '\n--- Fase 4: modul void ---\n'
 run_test "void dry-run"                        test_void_dry_run
 run_test "void autoclean -> exit 3"             test_void_autoclean_unsupported
+
+printf -- '\n--- Fase 5: modul alpine ---\n'
+run_test "alpine dry-run"                      test_alpine_dry_run
+run_test "alpine autoremove no-op"             test_alpine_autoremove_noop
+run_test "alpine fitur tidak didukung"         test_alpine_unsupported_features
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 
