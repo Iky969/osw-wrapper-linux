@@ -72,14 +72,24 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# 3. detect_os — pemetaan harus sama dengan bin/osw
+# 3. Deteksi OS — pemetaan harus sama dengan bin/osw
+# OSW_OS_RELEASE hanya untuk pengujian; default /etc/os-release.
 # -----------------------------------------------------------------------------
+OS_RELEASE_FILE="${OSW_OS_RELEASE:-/etc/os-release}"
+
+_os_release_value() {
+    local key="$1"
+    local value=""
+    if [[ -r "$OS_RELEASE_FILE" ]]; then
+        # shellcheck disable=SC1090
+        value="$(. "$OS_RELEASE_FILE" >/dev/null 2>&1 && printf '%s' "${!key:-}")"
+    fi
+    printf '%s\n' "$value"
+}
+
 detect_os() {
     local os_id=""
-    if [[ -f /etc/os-release ]]; then
-        # shellcheck disable=SC1091
-        os_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
-    fi
+    os_id="$(_os_release_value ID)"
     case "$os_id" in
         alpine) printf 'alpine\n' ;;
         void) printf 'void\n' ;;
@@ -88,6 +98,19 @@ detect_os() {
         arch | manjaro | endeavouros) printf 'arch\n' ;;
         *) printf 'unknown\n' ;;
     esac
+}
+
+# Nama tampilan saja; tidak pernah dipakai memilih modul.
+detect_os_name() {
+    local name=""
+    name="$(_os_release_value PRETTY_NAME)"
+    if [[ -z "$name" ]]; then
+        name="$(_os_release_value NAME)"
+    fi
+    if [[ -z "$name" ]]; then
+        name="unknown"
+    fi
+    printf '%s\n' "$name"
 }
 
 # -----------------------------------------------------------------------------
@@ -193,26 +216,42 @@ fi
 # 7. Baca config lama (kalau ada)
 # -----------------------------------------------------------------------------
 CONF_OS=""
+CONF_OS_NAME=""
 CONF_INSTALLED_AT=""
 CONF_VERSION=""
 if [[ -f "$CONF" ]]; then
     # shellcheck disable=SC1090
     . "$CONF"
     CONF_OS="${OS:-}"
+    CONF_OS_NAME="${OS_NAME:-}"
     CONF_INSTALLED_AT="${INSTALLED_AT:-}"
     CONF_VERSION="${VERSION:-}"
 fi
 
 # -----------------------------------------------------------------------------
-# 8. Tentukan OS & INSTALLED_AT
+# 8. Tentukan OS & OS_NAME
+# OS (family) hanya dideteksi kalau config belum ada atau --redetect diberikan.
+# Kalau config sudah ada, nilai tersimpan dipakai apa adanya.
 # -----------------------------------------------------------------------------
+if [[ "$REDETECT" == "1" || -z "$CONF_OS" ]]; then
+    DETECTED_OS="$(detect_os)"
+    DETECTED_NAME="$(detect_os_name)"
+else
+    DETECTED_OS="$CONF_OS"
+    if [[ -n "$CONF_OS_NAME" ]]; then
+        DETECTED_NAME="$CONF_OS_NAME"
+    else
+        # Config lama (3 baris) belum punya OS_NAME; lengkapi untuk tampilan.
+        DETECTED_NAME="$(detect_os_name)"
+    fi
+fi
+
 if [[ -n "$OS_OVERRIDE" ]]; then
     OS="$OS_OVERRIDE"
-elif [[ "$REDETECT" == "0" && -n "$CONF_OS" ]]; then
-    OS="$CONF_OS"
 else
-    OS="$(detect_os)"
+    OS="$DETECTED_OS"
 fi
+OS_NAME="$DETECTED_NAME"
 
 case "$OS" in
     debian | void | alpine | gentoo | arch) ;;
@@ -291,11 +330,12 @@ mkdir -p "$BIN_DIR"
 install -m 755 "$SRC/bin/osw" "$BIN_DIR/osw"
 
 # -----------------------------------------------------------------------------
-# 12. Tulis config (3 baris, dibaca bin/osw)
+# 12. Tulis config (4 baris, dibaca bin/osw)
+# OS_NAME hanya untuk tampilan dan di-escape supaya aman di-source kembali.
 # -----------------------------------------------------------------------------
 mkdir -p "$CONF_DIR"
-printf 'OS=%s\nINSTALLED_AT=%s\nVERSION=%s\n' \
-    "$OS" "$INSTALLED_AT" "$VERSION" >"$CONF"
+printf 'OS=%s\nOS_NAME=%s\nINSTALLED_AT=%s\nVERSION=%s\n' \
+    "$OS" "$(printf '%q' "$OS_NAME")" "$INSTALLED_AT" "$VERSION" >"$CONF"
 
 # -----------------------------------------------------------------------------
 # 13. PATH hint — cetak saja, jangan edit rc file

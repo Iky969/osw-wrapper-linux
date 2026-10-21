@@ -16,7 +16,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 0 | Kerangka repo | selesai | manual: `bin/`, `os/`, `install.sh`, `README.md`, `.shellcheckrc`, `VERSION`=0.1.0 |
 | 1 | `bin/osw` dispatcher | selesai | otomatis: help, flag, version, status, detect, fallback 3 (lihat `tests/run.sh`) |
 | 2 | `os/debian.sh` | selesai (16 fungsi) | otomatis: hanya mode `-n` (dry-run); **eksekusi apt nyata belum diuji** |
-| 3 | `install.sh` | selesai (11 poin blueprint) | otomatis: 17 tes Fase 3; mode pipe lewat network belum diuji |
+| 3 | `install.sh` | selesai (11 poin blueprint + config 4 baris) | otomatis: 21 tes Fase 3; mode pipe lewat network belum diuji |
 | 4 | `os/void.sh` | belum | — |
 | 5 | `os/alpine.sh` | belum | — |
 | 6 | `os/gentoo.sh` | belum | — |
@@ -73,12 +73,32 @@ Selesai. Implementasi mengikuti blueprint poin 1-11:
    `bin/osw` tidak ada → exit 1.
 6. Deploy modul: `cp -f "$SRC"/os/*.sh "$DATA_DIR/os/"`.
 7. Deploy dispatcher: `install -m 755 "$SRC/bin/osw" "$BIN_DIR/osw"`.
-8. Config 3 baris (`OS`, `INSTALLED_AT`, `VERSION`). `INSTALLED_AT` dipertahankan
-   kalau config sudah ada, dan hanya diperbarui dengan `--redetect`.
+8. Config 4 baris (`OS`, `OS_NAME`, `INSTALLED_AT`, `VERSION`). `INSTALLED_AT`
+   dipertahankan kalau config sudah ada, dan hanya diperbarui dengan
+   `--redetect`.
 9. PATH hint dicetak saja; rc file tidak pernah diubah otomatis.
 10. Self-test `osw version` + `osw status` setelah deploy; gagal → exit 1.
 11. `--uninstall` delegasi ke `osw uninstall`; kalau binary tidak ada, sisa
     direktori dibersihkan sendiri.
+
+Semantik deteksi (penting):
+
+- `OS` = **family** yang dipakai memilih modul `os/$OS.sh`. Nilainya dideteksi
+  dari `/etc/os-release` `ID` **hanya** kalau `os.conf` belum ada atau
+  `--redetect` diberikan. Kalau config sudah ada, `OS` tersimpan dipakai apa
+  adanya dan tidak ada deteksi ulang (kecuali `--os`/`--redetect` eksplisit).
+- Tidak ada pencarian modul satu per satu. Kalau `os/$OS.sh` tidak ada → exit 1
+  dengan pesan "modul ... belum tersedia" (sudah diuji dengan OS=alpine).
+- `OS_NAME` = nama tampilan dari `PRETTY_NAME`, fallback `NAME`, lalu `unknown`.
+  Disimpan dengan `printf '%q'` sehingga aman di-`source` kembali (diuji dengan
+  spasi, tanda kutip, dan tanda kurung). `OS_NAME` **tidak pernah** dipakai
+  memilih modul (diuji dengan `OS=debian` + `OS_NAME=Alpine Linux`).
+- `OSW_OS_RELEASE` (default `/etc/os-release`) adalah hook pengujian; tes
+  memakainya untuk mengganti isi os-release tanpa menyentuh `/etc`.
+- Config lama 3 baris tetap terbaca: `OS` dipakai, `OS_NAME` dilengkapi sekali
+  dari os-release untuk tampilan.
+- `osw detect` di `bin/osw` ikut menulis 4 baris + `OS_NAME` (perubahan di luar
+  `install.sh`, disebut eksplisit di pesan commit) agar format config konsisten.
 
 Keputusan desain yang perlu diketahui:
 
@@ -123,8 +143,8 @@ instalasi di OS selain container Ubuntu ini.
 
 ### 2. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 37 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
-  self-update, dan 17 tes Fase 3.
+- `tests/run.sh` berisi 41 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+  self-update, dan 21 tes Fase 3.
 - Fase 8 (`tests/smoke.sh`, `tests/contract.sh`, 4 container) belum dikerjakan.
   `tests/run.sh` dirancang agar bisa ditambah.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
@@ -139,4 +159,7 @@ instalasi di OS selain container Ubuntu ini.
 - `feat(fase3): install.sh` — installer + 17 tes Fase 3 (36 tes total, 36 lulus).
 - `fix(self-update): perbaiki unbound variable & wajibkan checksum SHA-256` —
   perbaikan bug Fase 1 di commit terpisah (37 tes total, 37 lulus).
+- `feat(fase3): OS_NAME di config & deteksi OS hanya saat perlu` — config 4
+  baris, `OS_NAME` ter-escape, deteksi family hanya tanpa config/`--redetect`,
+  `bin/osw do_detect` disamakan (41 tes total, 41 lulus).
 - Berikutnya: Fase 4 (`os/void.sh`).

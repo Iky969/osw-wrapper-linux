@@ -30,6 +30,9 @@ DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/$PROJECT"
 BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 CONF="$CONF_DIR/os.conf"
 
+# Override hanya untuk pengujian; default /etc/os-release.
+OS_RELEASE_FILE="${OSW_OS_RELEASE:-/etc/os-release}"
+
 # -----------------------------------------------------------------------------
 # 3. Flag Global Parser
 # -----------------------------------------------------------------------------
@@ -312,12 +315,19 @@ do_status() {
     fi
 }
 
+_os_release_value() {
+    local key="$1"
+    local value=""
+    if [[ -r "$OS_RELEASE_FILE" ]]; then
+        # shellcheck disable=SC1090
+        value="$(. "$OS_RELEASE_FILE" >/dev/null 2>&1 && printf '%s' "${!key:-}")"
+    fi
+    printf '%s\n' "$value"
+}
+
 detect_os() {
     local os_id=""
-    if [[ -f /etc/os-release ]]; then
-        # shellcheck disable=SC1091
-        os_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
-    fi
+    os_id="$(_os_release_value ID)"
     case "$os_id" in
         alpine)
             printf 'alpine\n'
@@ -340,9 +350,24 @@ detect_os() {
     esac
 }
 
+# Nama tampilan saja; tidak pernah dipakai memilih modul.
+detect_os_name() {
+    local name=""
+    name="$(_os_release_value PRETTY_NAME)"
+    if [[ -z "$name" ]]; then
+        name="$(_os_release_value NAME)"
+    fi
+    if [[ -z "$name" ]]; then
+        name="unknown"
+    fi
+    printf '%s\n' "$name"
+}
+
 do_detect() {
     local detected_os
     detected_os="$(detect_os)"
+    local detected_name
+    detected_name="$(detect_os_name)"
     local installed_at="${INSTALLED_AT:-}"
     if [[ -f "$CONF" ]]; then
         # shellcheck disable=SC1090
@@ -353,7 +378,8 @@ do_detect() {
         installed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
     fi
     mkdir -p "$CONF_DIR"
-    printf 'OS=%s\nINSTALLED_AT=%s\nVERSION=%s\n' "$detected_os" "$installed_at" "$VERSION" > "$CONF"
+    printf 'OS=%s\nOS_NAME=%s\nINSTALLED_AT=%s\nVERSION=%s\n' \
+        "$detected_os" "$(printf '%q' "$detected_name")" "$installed_at" "$VERSION" > "$CONF"
     OS="$detected_os"
     INSTALLED_AT="$installed_at"
     _info "OS terdeteksi: OS=$OS (disimpan ke $CONF)"

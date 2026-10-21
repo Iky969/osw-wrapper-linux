@@ -69,6 +69,31 @@ installer_run() {
     return 0
 }
 
+# Installer dengan file os-release palsu (OSW_OS_RELEASE).
+installer_run_osrel() {
+    local rel="$1"
+    shift
+    _sandbox_env OSW_OS_RELEASE="$rel" bash "$INSTALLER" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
+# Tulis file os-release palsu: ID (penentu family) + PRETTY_NAME (tampilan).
+write_os_release() {
+    local path="$1"
+    local id="$2"
+    local pretty="$3"
+    {
+        printf 'ID=%s\n' "$id"
+        printf "PRETTY_NAME='%s'\n" "$pretty"
+    } >"$path"
+}
+
+# Baca kembali OS_NAME dari config seperti yang dilakukan bin/osw (source).
+conf_os_name() {
+    _sandbox_env bash -c '. "$1" >/dev/null 2>&1; printf "%s" "${OS_NAME:-}"' _ "$1"
+}
+
 # Jalankan osw dengan proxy yang tidak bisa dihubungi: memastikan jalur network
 # gagal dengan pesan jelas, tanpa benar-benar menyentuh internet.
 osw_run_blocked_network() {
@@ -215,7 +240,9 @@ test_detect_writes_config() {
     osw_run detect
     expect_rc 0 || return 1
     expect_file "$SB/cfg/osw/os.conf" || return 1
+    expect_file_lines "$SB/cfg/osw/os.conf" 4 || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^OS=(debian|void|alpine|gentoo|arch|unknown)$' || return 1
+    expect_file_matches "$SB/cfg/osw/os.conf" '^OS_NAME=.+$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=.+$' || return 1
     expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=0.1.0" || return 1
 }
@@ -356,8 +383,9 @@ test_installer_debian() {
     installer_run --os debian
     expect_rc 0 || return 1
     expect_file "$SB/cfg/osw/os.conf" || return 1
-    expect_file_lines "$SB/cfg/osw/os.conf" 3 || return 1
+    expect_file_lines "$SB/cfg/osw/os.conf" 4 || return 1
     expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+    expect_file_matches "$SB/cfg/osw/os.conf" '^OS_NAME=.+$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T' || return 1
     expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=0.1.0" || return 1
     expect_exec "$SB/bin/osw" || return 1
@@ -434,6 +462,69 @@ test_installer_redetect_refreshes_installed_at() {
         _fail "--redetect tidak memperbarui INSTALLED_AT"
         return 1
     fi
+}
+
+test_installer_keeps_config_os_without_redetect() {
+    mkdir -p "$SB/cfg/osw"
+    printf 'OS=debian\nOS_NAME=Debian\nINSTALLED_AT=2026-01-01T00:00:00Z\nVERSION=0.1.0\n' \
+        >"$SB/cfg/osw/os.conf"
+    write_os_release "$SB/os-release" "alpine" "Alpine Linux"
+
+    installer_run_osrel "$SB/os-release" --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS_NAME=Debian" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "INSTALLED_AT=2026-01-01T00:00:00Z" || return 1
+    expect_file_lines "$SB/cfg/osw/os.conf" 4 || return 1
+    expect_file "$SB/data/osw/os/debian.sh" || return 1
+}
+
+test_installer_redetect_reevaluates_os() {
+    mkdir -p "$SB/cfg/osw"
+    printf 'OS=debian\nOS_NAME=Debian\nINSTALLED_AT=2026-01-01T00:00:00Z\nVERSION=0.1.0\n' \
+        >"$SB/cfg/osw/os.conf"
+    write_os_release "$SB/os-release" "alpine" "Alpine Linux"
+
+    # Family jadi alpine; modul alpine belum ada -> harus gagal, bukan mencoba
+    # modul lain. Config lama tidak boleh rusak.
+    installer_run_osrel "$SB/os-release" --redetect --no-path-hint
+    expect_rc 1 || return 1
+    expect_err "modul untuk OS=alpine belum tersedia" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+
+    write_os_release "$SB/os-release" "ubuntu" "Ubuntu Test 99"
+    installer_run_osrel "$SB/os-release" --redetect --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" 'OS_NAME=Ubuntu\ Test\ 99' || return 1
+}
+
+test_installer_os_name_escaped() {
+    local expected='Debian "Bookworm" Test Edition (stable)'
+    write_os_release "$SB/os-release" "debian" "$expected"
+
+    installer_run_osrel "$SB/os-release" --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_lines "$SB/cfg/osw/os.conf" 4 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" 'OS_NAME=Debian\ \"Bookworm\"\ Test\ Edition\ \(stable\)' || return 1
+
+    local got=""
+    got="$(conf_os_name "$SB/cfg/osw/os.conf")"
+    if [[ "$got" != "$expected" ]]; then
+        _fail "OS_NAME terbaca '$got', seharusnya '$expected'"
+        return 1
+    fi
+    expect_file "$SB/data/osw/os/debian.sh" || return 1
+}
+
+test_installer_os_name_not_used_for_module() {
+    write_os_release "$SB/os-release" "debian" "Alpine Linux 3.20"
+
+    installer_run_osrel "$SB/os-release" --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" 'OS_NAME=Alpine\ Linux\ 3.20' || return 1
+    expect_file "$SB/data/osw/os/debian.sh" || return 1
 }
 
 test_installer_uninstall_delegates() {
@@ -554,6 +645,10 @@ run_test "installer idempotent"                 test_installer_idempotent
 run_test "installer --prefix"                   test_installer_prefix
 run_test "installer pertahankan INSTALLED_AT"   test_installer_keeps_installed_at
 run_test "installer --redetect"                 test_installer_redetect_refreshes_installed_at
+run_test "installer pakai OS dari config"       test_installer_keeps_config_os_without_redetect
+run_test "installer --redetect deteksi ulang"   test_installer_redetect_reevaluates_os
+run_test "installer OS_NAME di-escape"          test_installer_os_name_escaped
+run_test "installer OS_NAME bukan pemilih modul" test_installer_os_name_not_used_for_module
 run_test "installer --uninstall delegasi"       test_installer_uninstall_delegates
 run_test "installer --uninstall dengan prefix"  test_installer_uninstall_with_prefix
 run_test "installer --uninstall tanpa binary"   test_installer_uninstall_without_binary
