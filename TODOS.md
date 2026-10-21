@@ -19,7 +19,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 3 | `install.sh` | selesai (11 poin blueprint + config 4 baris) | otomatis: 21 tes Fase 3; mode pipe lewat network belum diuji |
 | 4 | `os/void.sh` | selesai (14 fungsi) | otomatis: mode `-n` untuk semua aksi + `autoclean` -> 3; **XBPS nyata belum diuji** |
 | 5 | `os/alpine.sh` | selesai (13 fungsi) | otomatis: mode `-n`, `autoremove` no-op, `orphans`/`autoclean`/`list --user` -> 3; **apk nyata belum diuji** |
-| 6 | `os/gentoo.sh` | belum | — |
+| 6 | `os/gentoo.sh` | selesai (14 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` (opsional) | belum | — |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | belum | — |
 | 9 | README, docs, rilis | belum (`README.md` baru 1 baris) | — |
@@ -147,6 +147,25 @@ semua paket akan menyesatkan).
 
 Belum diuji: eksekusi apk sungguhan (butuh container Alpine).
 
+## Detail Fase 6 — `os/gentoo.sh`
+
+Selesai. emerge tidak punya `-y`, jadi pola flag-nya menambahkan `--ask`
+kecuali `OSW_YES=1`. update `emerge --sync`, upgrade & full-upgrade
+`emerge -uDN @world`, install `emerge`, remove `emerge --unmerge`,
+search `emerge --search`, info `qlist -Iv` (fallback `emerge -pv`, karena
+`emerge --info <pkg>` bukan info paket), list `qlist -I` dengan fallback isi
+`/var/db/pkg` (`--user` membaca `/var/lib/portage/world`), files `qlist`,
+owner `qfile`, autoremove `emerge -p --depclean` lalu `--depclean` hanya bila
+`OSW_YES=1`, orphans `emerge -p --depclean` (read-only), clean
+`eclean-dist --deep`.
+
+Mengembalikan 3 bila `qlist`/`qfile`/`eclean-dist` tidak ada (paket
+`app-portage/portage-utils` dan `app-portage/gentoolkit` belum terpasang).
+`autoclean` tidak didefinisikan.
+
+Belum diuji: eksekusi emerge sungguhan dan keluaran `qlist`/`qfile` (butuh
+container/stage3 Gentoo).
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
@@ -197,4 +216,7 @@ Belum diuji: eksekusi apk sungguhan (butuh container Alpine).
 - `feat(fase5): modul alpine (apk)` — `os/alpine.sh`, tes dry-run + no-op
   `autoremove` + fitur tidak didukung; tes `--redetect` memakai repo tanpa
   modul alpine agar tidak bergantung pada modul yang sudah ada (46 lulus).
-- Berikutnya: Fase 6 (`os/gentoo.sh`).
+- `feat(fase6): modul gentoo (portage)` — `os/gentoo.sh`, tes `--ask` default,
+  autoremove pretend vs `-y`, dan tool opsional yang tidak tersedia
+  (49 tes total, 49 lulus).
+- Berikutnya: Fase 7 (`os/arch.sh`).

@@ -727,6 +727,80 @@ test_alpine_unsupported_features() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase 6: modul gentoo (portage/emerge)
+# -----------------------------------------------------------------------------
+test_gentoo_dry_run() {
+    installer_run --os gentoo --no-path-hint
+    expect_rc 0 || return 1
+    expect_file "$SB/data/osw/os/gentoo.sh" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=gentoo" || return 1
+
+    bin_run "$SB/bin/osw" -n update
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge --sync" || return 1
+
+    # Tanpa -y emerge harus tetap bertanya (--ask).
+    bin_run "$SB/bin/osw" -n install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge --ask neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n -y install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge neovim" || return 1
+    expect_out_not "DRY: emerge --ask neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge -uDN @world --ask" || return 1
+
+    bin_run "$SB/bin/osw" -n -y full-upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge -uDN @world" || return 1
+    expect_out_not "--ask" || return 1
+
+    bin_run "$SB/bin/osw" -n remove neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge --unmerge --ask neovim" || return 1
+}
+
+test_gentoo_autoremove_pretend() {
+    installer_run --os gentoo --no-path-hint
+    expect_rc 0 || return 1
+
+    # Tanpa -y: hanya pretend, tidak ada yang dihapus.
+    bin_run "$SB/bin/osw" -n autoremove
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge -p --depclean" || return 1
+
+    bin_run "$SB/bin/osw" -n -y autoremove
+    expect_rc 0 || return 1
+    expect_out "DRY: emerge --depclean" || return 1
+    expect_out_not "emerge -p --depclean" || return 1
+}
+
+test_gentoo_optional_tools_missing() {
+    installer_run --os gentoo --no-path-hint
+    expect_rc 0 || return 1
+
+    # Lingkungan tes tidak punya eclean-dist/qlist/qfile.
+    bin_run "$SB/bin/osw" clean
+    expect_rc 3 || return 1
+    expect_err "eclean-dist" || return 1
+
+    bin_run "$SB/bin/osw" files foo
+    expect_rc 3 || return 1
+    expect_err "qlist" || return 1
+
+    bin_run "$SB/bin/osw" owner /usr/bin/foo
+    expect_rc 3 || return 1
+    expect_err "qfile" || return 1
+
+    bin_run "$SB/bin/osw" autoclean
+    expect_rc 3 || return 1
+    expect_err "fitur autoclean belum didukung untuk OS=gentoo" || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -815,6 +889,11 @@ printf -- '\n--- Fase 5: modul alpine ---\n'
 run_test "alpine dry-run"                      test_alpine_dry_run
 run_test "alpine autoremove no-op"             test_alpine_autoremove_noop
 run_test "alpine fitur tidak didukung"         test_alpine_unsupported_features
+
+printf -- '\n--- Fase 6: modul gentoo ---\n'
+run_test "gentoo dry-run (--ask default)"      test_gentoo_dry_run
+run_test "gentoo autoremove pretend"           test_gentoo_autoremove_pretend
+run_test "gentoo tool opsional tidak ada"      test_gentoo_optional_tools_missing
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 
