@@ -20,7 +20,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 4 | `os/void.sh` | selesai (14 fungsi) | otomatis: mode `-n` untuk semua aksi + `autoclean` -> 3; **XBPS nyata belum diuji** |
 | 5 | `os/alpine.sh` | selesai (13 fungsi) | otomatis: mode `-n`, `autoremove` no-op, `orphans`/`autoclean`/`list --user` -> 3; **apk nyata belum diuji** |
 | 6 | `os/gentoo.sh` | selesai (14 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
-| 7 | `os/arch.sh` (opsional) | belum | — |
+| 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | belum | — |
 | 9 | README, docs, rilis | belum (`README.md` baru 1 baris) | — |
 
@@ -166,6 +166,22 @@ Mengembalikan 3 bila `qlist`/`qfile`/`eclean-dist` tidak ada (paket
 Belum diuji: eksekusi emerge sungguhan dan keluaran `qlist`/`qfile` (butuh
 container/stage3 Gentoo).
 
+## Detail Fase 7 — `os/arch.sh`
+
+Selesai. update `pacman -Sy`, upgrade `pacman -Su`, full-upgrade
+`pacman -Syu`, install `pacman -S`, remove `pacman -Rns`, search `pacman -Ss`,
+info `pacman -Si`, list `pacman -Q` (`--user` -> `pacman -Qe`), files
+`pacman -Ql`, owner `pacman -Qo`, autoremove `pacman -Qtdq` lalu
+`pacman -Rns`, orphans `pacman -Qtdq` (read-only, keluar 0 walau kosong),
+clean `pacman -Sc`.
+
+Penting: di pacman `-y` berarti refresh database, **bukan** "jawab ya". Pola
+non-interaktif modul ini memakai `--noconfirm`, sehingga `osw -y install x`
+tidak pernah diperlakukan sebagai refresh. `autoclean` tidak didefinisikan.
+
+Belum diuji: eksekusi pacman sungguhan dan kasus ada orphan (butuh container
+Arch).
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
@@ -219,4 +235,7 @@ container/stage3 Gentoo).
 - `feat(fase6): modul gentoo (portage)` — `os/gentoo.sh`, tes `--ask` default,
   autoremove pretend vs `-y`, dan tool opsional yang tidak tersedia
   (49 tes total, 49 lulus).
-- Berikutnya: Fase 7 (`os/arch.sh`).
+- `feat(fase7): modul arch (pacman)` — `os/arch.sh`, tes dry-run dengan
+  `--noconfirm` (bukan `-y`), autoremove tanpa pacman, fallback `autoclean`
+  (52 tes total, 52 lulus).
+- Berikutnya: Fase 8 (`tests/smoke.sh`, `tests/contract.sh`).

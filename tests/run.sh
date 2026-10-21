@@ -801,6 +801,64 @@ test_gentoo_optional_tools_missing() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase 7: modul arch (pacman)
+# -----------------------------------------------------------------------------
+test_arch_dry_run() {
+    installer_run --os arch --no-path-hint
+    expect_rc 0 || return 1
+    expect_file "$SB/data/osw/os/arch.sh" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=arch" || return 1
+
+    bin_run "$SB/bin/osw" -n install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -S neovim" || return 1
+
+    # -y di pacman berarti refresh database, jadi non-interaktif memakai
+    # --noconfirm.
+    bin_run "$SB/bin/osw" -n -y install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -S --noconfirm neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n remove neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -Rns neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n update
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -Sy" || return 1
+
+    bin_run "$SB/bin/osw" -n -y upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -Su --noconfirm" || return 1
+
+    bin_run "$SB/bin/osw" -n full-upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -Syu" || return 1
+
+    bin_run "$SB/bin/osw" -n -y clean
+    expect_rc 0 || return 1
+    expect_out "DRY: pacman -Sc --noconfirm" || return 1
+}
+
+test_arch_autoremove() {
+    installer_run --os arch --no-path-hint
+    expect_rc 0 || return 1
+
+    # Lingkungan tes tidak punya pacman: tidak ada orphan, jadi no-op yang bersih.
+    bin_run "$SB/bin/osw" -n autoremove
+    expect_rc 0 || return 1
+    expect_out "Tidak ada paket yatim" || return 1
+}
+
+test_arch_autoclean_unsupported() {
+    installer_run --os arch --no-path-hint
+    expect_rc 0 || return 1
+    bin_run "$SB/bin/osw" autoclean
+    expect_rc 3 || return 1
+    expect_err "fitur autoclean belum didukung untuk OS=arch" || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -894,6 +952,11 @@ printf -- '\n--- Fase 6: modul gentoo ---\n'
 run_test "gentoo dry-run (--ask default)"      test_gentoo_dry_run
 run_test "gentoo autoremove pretend"           test_gentoo_autoremove_pretend
 run_test "gentoo tool opsional tidak ada"      test_gentoo_optional_tools_missing
+
+printf -- '\n--- Fase 7: modul arch ---\n'
+run_test "arch dry-run (--noconfirm)"          test_arch_dry_run
+run_test "arch autoremove"                     test_arch_autoremove
+run_test "arch autoclean -> exit 3"            test_arch_autoclean_unsupported
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 
