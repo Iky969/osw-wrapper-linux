@@ -15,11 +15,11 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | ---- | --- | ------------ | ---------- |
 | 0 | Kerangka repo | selesai | manual: `bin/`, `os/`, `install.sh`, `README.md`, `.shellcheckrc`, `VERSION`=0.1.0 |
 | 1 | `bin/osw` dispatcher | selesai | otomatis: help, flag, version, status, detect, fallback 3 (lihat `tests/run.sh`) |
-| 2 | `os/debian.sh` | selesai (16 fungsi) | otomatis: hanya mode `-n` (dry-run); **eksekusi apt nyata belum diuji** |
+| 2 | `os/debian.sh` | selesai (14 fungsi) | otomatis: hanya mode `-n` (dry-run); **eksekusi apt nyata belum diuji** |
 | 3 | `install.sh` | selesai (11 poin blueprint + config 4 baris) | otomatis: 21 tes Fase 3; mode pipe lewat network belum diuji |
-| 4 | `os/void.sh` | selesai (14 fungsi) | otomatis: mode `-n` untuk semua aksi + `autoclean` -> 3; **XBPS nyata belum diuji** |
-| 5 | `os/alpine.sh` | selesai (13 fungsi) | otomatis: mode `-n`, `autoremove` no-op, `orphans`/`autoclean`/`list --user` -> 3; **apk nyata belum diuji** |
-| 6 | `os/gentoo.sh` | selesai (14 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
+| 4 | `os/void.sh` | selesai (13 fungsi) | otomatis: mode `-n` untuk semua aksi + `autoclean` -> 3; **XBPS nyata belum diuji** |
+| 5 | `os/alpine.sh` | selesai (12 fungsi) | otomatis: mode `-n`, `autoremove` no-op, `orphans`/`autoclean`/`list --user` -> 3; **apk nyata belum diuji** |
+| 6 | `os/gentoo.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
 | 9 | README, docs, rilis | dokumen selesai | manual: periksa isi dokumen; **tag v0.1.0 + `install.sh.sha256` belum diterbitkan** (butuh push, di luar sesi ini) |
@@ -51,7 +51,7 @@ lebih dulu), bukan 2. Dengan config ada, keluar 2.
 
 ### Fase 2 — modul debian
 
-16 fungsi ada (update, upgrade, full-upgrade, install, remove, search, info, list,
+14 fungsi ada (update, upgrade, full-upgrade, install, remove, search, info, list,
 files, owner, autoremove, orphans, clean, autoclean; reinstall lewat fallback
 dispatcher). Pola `local -a yes=()` dihormati.
 
