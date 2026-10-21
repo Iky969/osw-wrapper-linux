@@ -21,7 +21,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 5 | `os/alpine.sh` | selesai (13 fungsi) | otomatis: mode `-n`, `autoremove` no-op, `orphans`/`autoclean`/`list --user` -> 3; **apk nyata belum diuji** |
 | 6 | `os/gentoo.sh` | selesai (14 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
-| 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | belum | — |
+| 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
 | 9 | README, docs, rilis | belum (`README.md` baru 1 baris) | — |
 
 ## Detail Fase 0-2
@@ -182,6 +182,34 @@ tidak pernah diperlakukan sebagai refresh. `autoclean` tidak didefinisikan.
 Belum diuji: eksekusi pacman sungguhan dan kasus ada orphan (butuh container
 Arch).
 
+## Detail Fase 8 — kontrak & smoke
+
+`tests/contract.sh` men-source tiap modul dengan stub helper dispatcher, lalu
+memeriksa:
+
+- shebang `#!/usr/bin/env bash`;
+- 10 fungsi wajib (`pkg_install pkg_remove pkg_update pkg_upgrade
+  pkg_full_upgrade pkg_search pkg_info pkg_list pkg_autoremove pkg_clean`);
+- modul tidak memakai `set -e` dan tidak mem-parse argumen sendiri;
+- fungsi opsional (`files owner orphans autoclean`) dilaporkan, bukan diwajibkan.
+
+`tests/smoke.sh` memasang osw ke sandbox (HOME/XDG sementara), lalu menjalankan
+perintah dengan `OSW_DRY=1 OSW_YES=1`. Dua mode:
+
+- `--stub` — semua modul, PATH berisi binari package manager palsu, sehingga 15
+  perintah (termasuk search/info/list/files/owner/orphans) bisa diuji hermetik:
+  **75 perintah, 75 lulus**.
+- tanpa `--stub` — OS dideteksi dari `/etc/os-release`, hanya perintah dry-run
+  yang dijalankan (tidak ada package manager yang dieksekusi): debian **9
+  perintah, 9 lulus** di host ini.
+
+Exit 3 diterima hanya untuk fitur opsional (`files`, `owner`, `orphans`,
+`autoclean`, `clean`); perintah inti yang keluar 3 dianggap gagal.
+
+Belum dijalankan: smoke di 4 container nyata (`debian:stable`,
+`voidlinux/voidlinux`, `alpine:latest`, `gentoo/stage3`). Lingkungan kerja ini
+tidak punya docker dan tidak boleh menjalankan package manager sungguhan.
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
@@ -238,4 +266,6 @@ Arch).
 - `feat(fase7): modul arch (pacman)` — `os/arch.sh`, tes dry-run dengan
   `--noconfirm` (bukan `-y`), autoremove tanpa pacman, fallback `autoclean`
   (52 tes total, 52 lulus).
-- Berikutnya: Fase 8 (`tests/smoke.sh`, `tests/contract.sh`).
+- `test(fase8): kontrak & smoke lintas modul` — `tests/contract.sh`,
+  `tests/smoke.sh`, integrasi ke `tests/run.sh` (57 tes total, 57 lulus).
+- Berikutnya: Fase 9 (README, docs, rilis).

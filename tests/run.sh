@@ -859,6 +859,64 @@ test_arch_autoclean_unsupported() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase 8: kontrak modul & smoke lintas modul
+# -----------------------------------------------------------------------------
+test_contract_all_modules() {
+    _sandbox_env bash "$ROOT_DIR/tests/contract.sh" >"$OUT" 2>"$ERR"
+    RC=$?
+    expect_rc 0 || return 1
+    expect_out "PASS  os/debian.sh" || return 1
+    expect_out "PASS  os/void.sh" || return 1
+    expect_out "PASS  os/alpine.sh" || return 1
+    expect_out "PASS  os/gentoo.sh" || return 1
+    expect_out "PASS  os/arch.sh" || return 1
+    expect_out "5 modul: 0 gagal" || return 1
+}
+
+test_contract_rejects_missing_funcs() {
+    # Modul yang tidak lengkap harus ditolak: memastikan tes kontrak tidak
+    # selalu hijau.
+    local mod="$SB/os/broken.sh"
+    mkdir -p "$SB/os"
+    printf '#!/usr/bin/env bash\npkg_update() { :; }\n' >"$mod"
+    _sandbox_env bash "$ROOT_DIR/tests/contract.sh" "$mod" >"$OUT" 2>"$ERR"
+    RC=$?
+    expect_rc 1 || return 1
+    expect_err "fungsi wajib tidak ada" || return 1
+}
+
+test_contract_rejects_own_parser() {
+    local mod="$SB/os/parser.sh"
+    mkdir -p "$SB/os"
+    printf '#!/usr/bin/env bash\nset -euo pipefail\n' >"$mod"
+    _sandbox_env bash "$ROOT_DIR/tests/contract.sh" "$mod" >"$OUT" 2>"$ERR"
+    RC=$?
+    expect_rc 1 || return 1
+    expect_err "modul memakai set -e" || return 1
+}
+
+test_smoke_stub_all_modules() {
+    _sandbox_env bash "$ROOT_DIR/tests/smoke.sh" --stub >"$OUT" 2>"$ERR"
+    RC=$?
+    expect_rc 0 || return 1
+    expect_out "PASS  debian" || return 1
+    expect_out "PASS  void" || return 1
+    expect_out "PASS  alpine" || return 1
+    expect_out "PASS  gentoo" || return 1
+    expect_out "PASS  arch" || return 1
+    expect_out ", 0 gagal" || return 1
+}
+
+test_smoke_real_debian() {
+    # Tanpa --stub: hanya perintah dry-run, memakai binari asli host.
+    _sandbox_env bash "$ROOT_DIR/tests/smoke.sh" --os debian >"$OUT" 2>"$ERR"
+    RC=$?
+    expect_rc 0 || return 1
+    expect_out "PASS  debian" || return 1
+    expect_out "9 perintah" || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -957,6 +1015,13 @@ printf -- '\n--- Fase 7: modul arch ---\n'
 run_test "arch dry-run (--noconfirm)"          test_arch_dry_run
 run_test "arch autoremove"                     test_arch_autoremove
 run_test "arch autoclean -> exit 3"            test_arch_autoclean_unsupported
+
+printf -- '\n--- Fase 8: kontrak & smoke modul ---\n'
+run_test "contract semua modul"               test_contract_all_modules
+run_test "contract menolak modul tidak lengkap" test_contract_rejects_missing_funcs
+run_test "contract menolak set -e di modul"   test_contract_rejects_own_parser
+run_test "smoke --stub semua modul"           test_smoke_stub_all_modules
+run_test "smoke debian (dry-run asli)"        test_smoke_real_debian
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 
