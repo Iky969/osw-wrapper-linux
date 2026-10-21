@@ -124,6 +124,33 @@ prepare_debian_config() {
     cp "$ROOT_DIR/os/debian.sh" "$SB/data/osw/os/debian.sh"
 }
 
+# Salin repo ke sandbox tanpa satu modul: menguji preflight "modul belum
+# tersedia" tanpa bergantung pada modul mana yang sudah ada di repo.
+repo_without_module() {
+    local drop="$1"
+    local dest="$SB/repo"
+    local file
+    mkdir -p "$dest/os" "$dest/bin"
+    cp "$INSTALLER" "$dest/install.sh"
+    cp "$ROOT_DIR/VERSION" "$dest/VERSION"
+    cp "$ROOT_DIR/bin/osw" "$dest/bin/osw"
+    for file in "$ROOT_DIR"/os/*.sh; do
+        if [[ "$(basename "$file" .sh)" == "$drop" ]]; then
+            continue
+        fi
+        cp "$file" "$dest/os/"
+    done
+    printf '%s\n' "$dest"
+}
+
+installer_run_alt() {
+    local script="$1"
+    shift
+    _sandbox_env bash "$script" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
 # -----------------------------------------------------------------------------
 # Assertion
 # -----------------------------------------------------------------------------
@@ -372,7 +399,9 @@ test_installer_unknown_os() {
 }
 
 test_installer_missing_module() {
-    installer_run --os void
+    local repo=""
+    repo="$(repo_without_module void)"
+    installer_run_alt "$repo/install.sh" --os void
     expect_rc 1 || return 1
     expect_err "modul untuk OS=void belum tersedia" || return 1
     expect_absent "$SB/cfg/osw/os.conf" || return 1
@@ -574,6 +603,56 @@ test_installer_pipe_mode_without_network() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase 4: modul void (XBPS)
+# -----------------------------------------------------------------------------
+test_void_dry_run() {
+    installer_run --os void --no-path-hint
+    expect_rc 0 || return 1
+    expect_file "$SB/data/osw/os/void.sh" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=void" || return 1
+
+    bin_run "$SB/bin/osw" -n install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-install neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n -y install neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-install -y neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n remove neovim
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-remove neovim" || return 1
+
+    bin_run "$SB/bin/osw" -n update
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-install -S" || return 1
+
+    bin_run "$SB/bin/osw" -n upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-install -u" || return 1
+
+    bin_run "$SB/bin/osw" -n -y full-upgrade
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-install -Su -y" || return 1
+
+    bin_run "$SB/bin/osw" -n autoremove
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-remove -o" || return 1
+
+    bin_run "$SB/bin/osw" -n clean
+    expect_rc 0 || return 1
+    expect_out "DRY: xbps-remove -O" || return 1
+}
+
+test_void_autoclean_unsupported() {
+    installer_run --os void --no-path-hint
+    expect_rc 0 || return 1
+    bin_run "$SB/bin/osw" autoclean
+    expect_rc 3 || return 1
+    expect_err "fitur autoclean belum didukung untuk OS=void" || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -653,6 +732,10 @@ run_test "installer --uninstall delegasi"       test_installer_uninstall_delegat
 run_test "installer --uninstall dengan prefix"  test_installer_uninstall_with_prefix
 run_test "installer --uninstall tanpa binary"   test_installer_uninstall_without_binary
 run_test "installer mode pipe tanpa network"    test_installer_pipe_mode_without_network
+
+printf -- '\n--- Fase 4: modul void ---\n'
+run_test "void dry-run"                        test_void_dry_run
+run_test "void autoclean -> exit 3"             test_void_autoclean_unsupported
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 

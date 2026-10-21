@@ -17,7 +17,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 1 | `bin/osw` dispatcher | selesai | otomatis: help, flag, version, status, detect, fallback 3 (lihat `tests/run.sh`) |
 | 2 | `os/debian.sh` | selesai (16 fungsi) | otomatis: hanya mode `-n` (dry-run); **eksekusi apt nyata belum diuji** |
 | 3 | `install.sh` | selesai (11 poin blueprint + config 4 baris) | otomatis: 21 tes Fase 3; mode pipe lewat network belum diuji |
-| 4 | `os/void.sh` | belum | — |
+| 4 | `os/void.sh` | selesai (14 fungsi) | otomatis: mode `-n` untuk semua aksi + `autoclean` -> 3; **XBPS nyata belum diuji** |
 | 5 | `os/alpine.sh` | belum | — |
 | 6 | `os/gentoo.sh` | belum | — |
 | 7 | `os/arch.sh` (opsional) | belum | — |
@@ -118,6 +118,20 @@ Keputusan desain yang perlu diketahui:
 Belum diuji: unduhan mode pipe yang sukses (butuh network + repo publik) dan
 instalasi di OS selain container Ubuntu ini.
 
+## Detail Fase 4 — `os/void.sh`
+
+Selesai. Pemetaan XBPS sesuai blueprint: update `xbps-install -S`, upgrade
+`xbps-install -u`, full-upgrade `xbps-install -Su` (Void tidak memisahkan
+keduanya), install/remove, search/info `xbps-query -Rs`/`-R`, list `-l`
+(`--user` -> `-m`), files `-f`, owner `-o`, autoremove `xbps-remove -o`,
+orphans `xbps-query -O` (read-only), clean `xbps-remove -O`.
+
+`pkg_autoclean` sengaja tidak didefinisikan (tidak ada padanan di XBPS), jadi
+fallback dispatcher mengembalikan 3 — diuji.
+
+Belum diuji: eksekusi XBPS sungguhan (butuh container Void); semua uji memakai
+`OSW_DRY=1`.
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
@@ -162,4 +176,7 @@ instalasi di OS selain container Ubuntu ini.
 - `feat(fase3): OS_NAME di config & deteksi OS hanya saat perlu` — config 4
   baris, `OS_NAME` ter-escape, deteksi family hanya tanpa config/`--redetect`,
   `bin/osw do_detect` disamakan (41 tes total, 41 lulus).
-- Berikutnya: Fase 4 (`os/void.sh`).
+- `feat(fase4): modul void (XBPS)` — `os/void.sh`, tes dry-run + fallback
+  `autoclean`, tes preflight "modul belum tersedia" dibuat independen dari
+  modul yang ada (43 tes total, 43 lulus).
+- Berikutnya: Fase 5 (`os/alpine.sh`).
