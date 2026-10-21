@@ -22,7 +22,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 6 | `os/gentoo.sh` | selesai (14 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
-| 9 | README, docs, rilis | belum (`README.md` baru 1 baris) | — |
+| 9 | README, docs, rilis | dokumen selesai | manual: periksa isi dokumen; **tag v0.1.0 + `install.sh.sha256` belum diterbitkan** (butuh push, di luar sesi ini) |
 
 ## Detail Fase 0-2
 
@@ -210,6 +210,27 @@ Belum dijalankan: smoke di 4 container nyata (`debian:stable`,
 `voidlinux/voidlinux`, `alpine:latest`, `gentoo/stage3`). Lingkungan kerja ini
 tidak punya docker dan tidak boleh menjalankan package manager sungguhan.
 
+## Detail Fase 9 — dokumentasi & rilis
+
+Selesai untuk bagian yang bisa dikerjakan tanpa push:
+
+- `README.md`: instalasi (tag + checksum, mode pipe, clone), opsi installer,
+  format config, daftar perintah + flag global + exit code, tabel OS yang
+  didukung, tabel pemetaan perintah per OS, cara menjalankan tes, cara lapor
+  bug, dan langkah rilis.
+- `docs/CONTRACT.md`: aturan arsitektur, 10 fungsi wajib + 5 opsional, tabel
+  ketersediaan per modul, pola flag non-interaktif, exit code, path/config,
+  hook pengujian.
+- `docs/ADDING-OS.md`: checklist modul baru, kerangka kode, verifikasi, uji
+  container, dan jebakan yang sudah ditemukan (`pacman -y`, `emerge --info`,
+  `apk` tanpa `-y`, `pacman -Qtdq` exit 1).
+
+Belum dikerjakan (butuh push/rilis, tidak dilakukan tanpa izin eksplisit):
+
+- membuat dan mendorong tag `v0.1.0`;
+- menerbitkan `install.sh.sha256` di tag tersebut, yang **wajib** agar
+  `osw self-update` bisa berjalan (lihat item terbuka 1).
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
@@ -268,4 +289,6 @@ tidak punya docker dan tidak boleh menjalankan package manager sungguhan.
   (52 tes total, 52 lulus).
 - `test(fase8): kontrak & smoke lintas modul` — `tests/contract.sh`,
   `tests/smoke.sh`, integrasi ke `tests/run.sh` (57 tes total, 57 lulus).
-- Berikutnya: Fase 9 (README, docs, rilis).
+- `docs(fase9): README, kontrak modul, panduan modul baru` — `README.md`,
+  `docs/CONTRACT.md`, `docs/ADDING-OS.md` (57 tes tetap hijau).
+- Sisa: terbitkan tag `v0.1.0` + `install.sh.sha256` (butuh push).
