@@ -1,0 +1,28 @@
+# Editor & OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+
+# Hasil patch & backup
+*.orig
+*.rej
+*.bak
+
+# Arsip (zip checkpoint, hasil patch)
+*.zip
+*.tar.gz
+
+# Output build / sementara
+/dist/
+/build/
+/tmp/
+
+# Konfigurasi lokal user (jangan ikut terbawa)
+os.conf
+.env
+
+# Log
+*.log

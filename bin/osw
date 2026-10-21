@@ -1,0 +1,580 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Iky969
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# 1. Header & Metadata
+# -----------------------------------------------------------------------------
+PROJECT="osw"
+UPSTREAM_REPO="${OSW_UPSTREAM_REPO:-Iky969/osw-wrapper-linux}"
+UPSTREAM_VERSION_URL="https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/VERSION"
+UPSTREAM_URL="https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/install.sh"
+
+SCRIPT_PATH="$(readlink -f "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+
+if [[ -f "$REPO_DIR/VERSION" ]]; then
+    IFS= read -r VERSION < "$REPO_DIR/VERSION" || true
+    VERSION="${VERSION//$'\r'/}"
+else
+    VERSION="0.1.0"
+fi
+
+# -----------------------------------------------------------------------------
+# 2. Resolusi Path (XDG Base Directory)
+# -----------------------------------------------------------------------------
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/$PROJECT"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/$PROJECT"
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+CONF="$CONF_DIR/os.conf"
+
+# -----------------------------------------------------------------------------
+# 3. Flag Global Parser
+# -----------------------------------------------------------------------------
+export OSW_YES="${OSW_YES:-0}"
+export OSW_DRY="${OSW_DRY:-0}"
+export OSW_QUIET="${OSW_QUIET:-0}"
+export OSW_NO_COLOR="${OSW_NO_COLOR:-0}"
+export OSW_DEBUG="${OSW_DEBUG:-0}"
+
+WANT_HELP=0
+WANT_VERSION=0
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -y|--yes)
+            OSW_YES=1
+            shift
+            ;;
+        -n|--dry-run)
+            OSW_DRY=1
+            shift
+            ;;
+        -q|--quiet)
+            OSW_QUIET=1
+            shift
+            ;;
+        --no-color)
+            OSW_NO_COLOR=1
+            shift
+            ;;
+        --debug)
+            OSW_DEBUG=1
+            shift
+            ;;
+        -h|--help)
+            WANT_HELP=1
+            shift
+            ;;
+        -v|--version)
+            WANT_VERSION=1
+            shift
+            ;;
+        --user|--repo)
+            if [[ "${POSITIONAL_ARGS[0]:-}" == "list" ]]; then
+                POSITIONAL_ARGS+=("$1")
+                shift
+            else
+                printf 'osw: error: flag %s hanya berlaku untuk subcommand "list"\n' "$1" >&2
+                exit 2
+            fi
+            ;;
+        --)
+            shift
+            while [[ $# -gt 0 ]]; do
+                POSITIONAL_ARGS+=("$1")
+                shift
+            done
+            ;;
+        -*)
+            printf 'osw: error: flag tidak dikenal: %s\nLihat bantuan: osw help\n' "$1" >&2
+            exit 2
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ ${#POSITIONAL_ARGS[@]} -gt 0 ]]; then
+    set -- "${POSITIONAL_ARGS[@]}"
+else
+    set --
+fi
+
+if [[ "$WANT_HELP" == "1" ]]; then
+    if [[ "${1:-}" == "help" ]]; then
+        shift || true
+    fi
+    cmd="help"
+elif [[ "$WANT_VERSION" == "1" ]]; then
+    cmd="version"
+else
+    cmd="${1:-help}"
+    shift || true
+fi
+
+# -----------------------------------------------------------------------------
+# Warna & Output Helpers (OSW_NO_COLOR & OSW_QUIET)
+# -----------------------------------------------------------------------------
+if [[ "${OSW_NO_COLOR:-0}" == "1" || ! -t 1 ]]; then
+    C_RESET=""
+    C_ERR=""
+    C_WARN=""
+    C_OK=""
+else
+    C_RESET=$'\033[0m'
+    C_ERR=$'\033[31m'
+    C_WARN=$'\033[33m'
+    C_OK=$'\033[32m'
+fi
+
+_info() {
+    if [[ "${OSW_QUIET:-0}" == "1" ]]; then
+        return 0
+    fi
+    printf '%s\n' "$*"
+}
+
+_warn() {
+    printf '%s%s%s\n' "$C_WARN" "$*" "$C_RESET" >&2
+}
+
+_err() {
+    printf '%sosw: error: %s%s\n' "$C_ERR" "$*" "$C_RESET" >&2
+}
+
+# -----------------------------------------------------------------------------
+# 4. Helper _run
+# -----------------------------------------------------------------------------
+_run() {
+    if [[ "${OSW_DRY:-0}" == "1" ]]; then
+        printf 'DRY: %s\n' "$*"
+        return 0
+    fi
+    if [[ "${OSW_DEBUG:-0}" == "1" ]]; then
+        set -x
+    fi
+    "$@"
+    local rc=$?
+    if [[ "${OSW_DEBUG:-0}" == "1" ]]; then
+        set +x
+    fi
+    return "$rc"
+}
+
+# -----------------------------------------------------------------------------
+# 5. Helper _priv
+# -----------------------------------------------------------------------------
+_priv() {
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        _run "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        _run sudo "$@"
+    elif command -v doas >/dev/null 2>&1; then
+        _run doas "$@"
+    else
+        _err "membutuhkan hak akses root (sudo/doas tidak ditemukan)"
+        return 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 6. Helper _need_args
+# -----------------------------------------------------------------------------
+_need_args() {
+    if [[ $# -lt 1 ]]; then
+        _err "subcommand \"$cmd\" membutuhkan minimal 1 argumen."
+        printf 'Lihat bantuan: osw help %s\n' "$cmd" >&2
+        exit 1
+    fi
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == -* ]]; then
+            _err "argumen tidak valid (flag tidak dikenal) untuk \"$cmd\": $arg"
+            exit 2
+        fi
+    done
+}
+
+# -----------------------------------------------------------------------------
+# 10. usage() & 11. usage_cmd()
+# -----------------------------------------------------------------------------
+usage() {
+    cat <<'EOF'
+Usage: osw [FLAGS] <command> [args...]
+
+Universal Linux Package Manager Wrapper
+
+Commands (Package Management):
+  install <pkg>...      Pasang satu atau lebih paket
+  remove <pkg>...       Hapus satu atau lebih paket
+  reinstall <pkg>...    Pasang ulang paket (remove + install)
+  update                Sinkronisasi indeks repositori paket
+  upgrade               Perbarui semua paket yang terpasang
+  full-upgrade          Pembaruan penuh sistem/distribusi
+  search <query>...     Cari paket di repositori
+  info <pkg>...         Tampilkan informasi detail paket
+  list [--user|--repo]  Tampilkan daftar paket yang terpasang
+  files <pkg>...        Tampilkan daftar file milik paket
+  owner <path>...       Cari paket pemilik suatu file/path
+  autoremove            Hapus dependensi paket yang tidak lagi dibutuhkan
+  orphans               Tampilkan daftar paket yatim (orphan) secara read-only
+  clean                 Bersihkan seluruh cache unduhan paket
+  autoclean             Bersihkan cache paket usang
+
+Commands (System & Maintenance):
+  status                Tampilkan status instalasi, konfigurasi, dan PATH
+  detect                Deteksi ulang distribusi OS dan simpan ke konfigurasi
+  self-update           Perbarui osw langsung dari repositori upstream
+  uninstall             Hapus instalasi osw dari sistem
+  version               Tampilkan versi osw dan OS yang dikonfigurasi
+  help [command]        Tampilkan bantuan umum atau bantuan per subcommand
+
+Global Flags:
+  -y, --yes             Konfirmasi otomatis tanpa prompt interaktif (OSW_YES=1)
+  -n, --dry-run         Simulasi perintah tanpa eksekusi nyata (OSW_DRY=1)
+  -q, --quiet           Kurangi output informasi (OSW_QUIET=1)
+  --no-color            Nonaktifkan warna pada output (OSW_NO_COLOR=1)
+  --debug               Tampilkan jejak eksekusi perintah / set -x (OSW_DEBUG=1)
+  -h, --help            Tampilkan bantuan
+  -v, --version         Tampilkan versi osw
+
+Examples:
+  osw update && osw -y upgrade
+  osw install neovim git curl
+  osw --dry-run remove firefox
+  osw search ripgrep
+  osw owner /usr/bin/bash
+EOF
+}
+
+usage_cmd() {
+    case "${1:-}" in
+        "")            usage ;;
+        install)       printf 'Usage: osw [FLAGS] install <pkg>... — Pasang satu atau lebih paket.\n' ;;
+        remove)        printf 'Usage: osw [FLAGS] remove <pkg>... — Hapus satu atau lebih paket.\n' ;;
+        reinstall)     printf 'Usage: osw [FLAGS] reinstall <pkg>... — Pasang ulang paket (remove lalu install).\n' ;;
+        update)        printf 'Usage: osw [FLAGS] update — Sinkronisasi indeks repositori paket.\n' ;;
+        upgrade)       printf 'Usage: osw [FLAGS] upgrade — Perbarui paket yang terpasang.\n' ;;
+        full-upgrade)  printf 'Usage: osw [FLAGS] full-upgrade — Jalankan pembaruan penuh sistem.\n' ;;
+        search)        printf 'Usage: osw [FLAGS] search <query>... — Cari paket berdasarkan kata kunci.\n' ;;
+        info)          printf 'Usage: osw [FLAGS] info <pkg>... — Tampilkan detail informasi paket.\n' ;;
+        list)          printf 'Usage: osw [FLAGS] list [--user|--repo] — Tampilkan daftar paket terpasang.\n' ;;
+        files)         printf 'Usage: osw [FLAGS] files <pkg>... — Tampilkan daftar file yang dimiliki paket.\n' ;;
+        owner)         printf 'Usage: osw [FLAGS] owner <path>... — Cari paket pemilik file atau path tertentu.\n' ;;
+        autoremove)    printf 'Usage: osw [FLAGS] autoremove — Hapus dependensi paket yang tidak terpakai.\n' ;;
+        orphans)       printf 'Usage: osw [FLAGS] orphans — Tampilkan daftar paket orphan (read-only).\n' ;;
+        clean)         printf 'Usage: osw [FLAGS] clean — Bersihkan seluruh cache paket.\n' ;;
+        autoclean)     printf 'Usage: osw [FLAGS] autoclean — Bersihkan cache paket yang sudah usang.\n' ;;
+        status)        printf 'Usage: osw status — Tampilkan status konfigurasi, versi, dan PATH.\n' ;;
+        detect)        printf 'Usage: osw detect — Deteksi ulang distribusi OS dan perbarui file konfigurasi.\n' ;;
+        self-update)   printf 'Usage: osw self-update — Unduh dan jalankan pembaruan osw dari upstream.\n' ;;
+        uninstall)     printf 'Usage: osw [-y] uninstall — Hapus instalasi osw dari sistem.\n' ;;
+        version)       printf 'Usage: osw version — Cetak versi osw beserta OS aktif.\n' ;;
+        help)          printf 'Usage: osw help [command] — Tampilkan bantuan umum atau spesifik subcommand.\n' ;;
+        *)
+            _err "subcommand tidak dikenal untuk help: $1"
+            return 2
+            ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# 12. do_version, 13. do_status, 14. do_detect, 15. do_self_update, 16. do_uninstall
+# -----------------------------------------------------------------------------
+do_version() {
+    if [[ -f "$CONF" ]]; then
+        # shellcheck disable=SC1090
+        source "$CONF"
+    fi
+    if [[ -n "${OS:-}" ]]; then
+        printf 'osw %s (OS=%s)\n' "$VERSION" "$OS"
+    else
+        printf 'osw %s\n' "$VERSION"
+    fi
+}
+
+do_status() {
+    printf 'osw version  : %s\n' "${VERSION:-0.1.0}"
+    printf 'OS           : %s\n' "${OS:-unknown}"
+    printf 'Installed at : %s\n' "${INSTALLED_AT:-unknown}"
+    printf 'Config path  : %s\n' "$CONF"
+    printf 'Data path    : %s\n' "$DATA_DIR"
+    if [[ ":$PATH:" == *":$BIN_DIR:"* ]]; then
+        printf 'PATH status  : %sOK (%s ada di PATH)%s\n' "$C_OK" "$BIN_DIR" "$C_RESET"
+    else
+        printf 'PATH status  : %s⚠ %s tidak ditemukan di PATH%s\n' "$C_WARN" "$BIN_DIR" "$C_RESET"
+    fi
+}
+
+detect_os() {
+    local os_id=""
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        os_id="$(. /etc/os-release && printf '%s' "${ID:-}")"
+    fi
+    case "$os_id" in
+        alpine)
+            printf 'alpine\n'
+            ;;
+        void)
+            printf 'void\n'
+            ;;
+        gentoo|funtoo)
+            printf 'gentoo\n'
+            ;;
+        debian|ubuntu|mint|linuxmint|pop|kali)
+            printf 'debian\n'
+            ;;
+        arch|manjaro|endeavouros)
+            printf 'arch\n'
+            ;;
+        *)
+            printf 'unknown\n'
+            ;;
+    esac
+}
+
+do_detect() {
+    local detected_os
+    detected_os="$(detect_os)"
+    local installed_at="${INSTALLED_AT:-}"
+    if [[ -f "$CONF" ]]; then
+        # shellcheck disable=SC1090
+        source "$CONF"
+        installed_at="${INSTALLED_AT:-}"
+    fi
+    if [[ -z "$installed_at" ]]; then
+        installed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    fi
+    mkdir -p "$CONF_DIR"
+    printf 'OS=%s\nINSTALLED_AT=%s\nVERSION=%s\n' "$detected_os" "$installed_at" "$VERSION" > "$CONF"
+    OS="$detected_os"
+    INSTALLED_AT="$installed_at"
+    _info "OS terdeteksi: OS=$OS (disimpan ke $CONF)"
+
+    if [[ "$OS" == "unknown" ]]; then
+        _warn "⚠ Distribusi OS tidak dikenali (OS=unknown), install.sh akan menolak."
+    elif [[ ! -f "$DATA_DIR/os/${OS}.sh" ]]; then
+        _warn "⚠ Modul ${OS} belum tersedia di $DATA_DIR/os/${OS}.sh, install.sh akan menolak."
+    fi
+}
+
+do_self_update() {
+    local target_ver="$VERSION"
+    local target_url="$UPSTREAM_URL"
+
+    if [[ -z "$expected_sha" ]]; then
+    _err "checksum SHA-256 tidak tersedia untuk $target_url, pembaruan dibatalkan"
+    return 1
+    fi
+    
+    local fetched_ver=""
+    if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
+        target_ver="$fetched_ver"
+        target_url="https://raw.githubusercontent.com/${UPSTREAM_REPO}/v${target_ver}/install.sh"
+    fi
+
+    local tmp_installer
+    tmp_installer="$(mktemp)"
+    trap 'rm -f "$tmp_installer"' RETURN
+
+    _info "Mengunduh installer osw (v${target_ver}) dari ${target_url}..."
+    if ! curl -fsSL "$target_url" -o "$tmp_installer"; then
+        _err "gagal mengunduh installer dari $target_url"
+        return 1
+    fi
+
+    if ! head -n 1 "$tmp_installer" | grep -q '^#!/usr/bin/env bash'; then
+        _err "file installer yang diunduh tidak valid (shebang tidak cocok)"
+        return 1
+    fi
+
+    local sha_url="${target_url}.sha256"
+    local expected_sha=""
+    if expected_sha="$(curl -fsSL "$sha_url" 2>/dev/null | awk '{print $1}')" && [[ -n "$expected_sha" ]]; then
+        local actual_sha
+        actual_sha="$(sha256sum "$tmp_installer" | awk '{print $1}')"
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+            _err "verifikasi checksum SHA-256 gagal ($actual_sha != $expected_sha)"
+            return 1
+        fi
+    fi
+
+    bash "$tmp_installer"
+    do_status
+}
+
+do_uninstall() {
+    if [[ "${OSW_YES:-0}" != "1" ]]; then
+        local ans=""
+        read -r -p "Yakin ingin menghapus instalasi osw? [y/N] " ans
+        case "$ans" in
+            [yY]|[yY][eE][sS]) ;;
+            *)
+                _info "Uninstall dibatalkan."
+                return 0
+                ;;
+        esac
+    fi
+
+    _run rm -rf "$DATA_DIR"
+    _run rm -f "$BIN_DIR/osw"
+
+    if [[ "${OSW_YES:-0}" == "1" ]]; then
+        _run rm -rf "$CONF_DIR"
+    else
+        local ans_conf=""
+        read -r -p "Hapus direktori konfigurasi $CONF_DIR juga? [y/N] " ans_conf
+        case "$ans_conf" in
+            [yY]|[yY][eE][sS])
+                _run rm -rf "$CONF_DIR"
+                ;;
+            *)
+                _info "Konfigurasi tetap disimpan di $CONF_DIR"
+                ;;
+        esac
+    fi
+    _info "osw berhasil dihapus."
+}
+
+# Early exit untuk subcommand yang dapat berjalan sebelum os.conf dibuat (Bug 1 fix)
+case "$cmd" in
+    version|-v|--version)
+        do_version
+        exit 0
+        ;;
+    detect)
+        do_detect
+        exit 0
+        ;;
+    help|-h|--help)
+        usage_cmd "${1:-}"
+        exit $?
+        ;;
+esac
+
+# -----------------------------------------------------------------------------
+# 7. Cek Config
+# -----------------------------------------------------------------------------
+if [[ ! -f "$CONF" ]]; then
+    _err "konfigurasi tidak ditemukan di $CONF (jalankan install.sh dulu)"
+    exit 4
+fi
+
+# -----------------------------------------------------------------------------
+# 8. Source Config -> Source Modul OS
+# -----------------------------------------------------------------------------
+# shellcheck disable=SC1090
+source "$CONF"
+
+OS="${OS:-unknown}"
+OSFILE="$DATA_DIR/os/$OS.sh"
+if [[ -f "$OSFILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$OSFILE"
+fi
+
+# -----------------------------------------------------------------------------
+# 9. Fallback Fungsi (SETELAH source, dijaga declare -F)
+# -----------------------------------------------------------------------------
+if ! declare -F pkg_reinstall >/dev/null 2>&1; then
+    pkg_reinstall() {
+        pkg_remove "$@" && pkg_install "$@"
+    }
+fi
+
+for _fn in pkg_files pkg_owner pkg_orphans pkg_autoclean \
+           pkg_install pkg_remove pkg_update pkg_upgrade pkg_full_upgrade \
+           pkg_search pkg_info pkg_list pkg_autoremove pkg_clean; do
+    if ! declare -F "$_fn" >/dev/null 2>&1; then
+        eval "${_fn}() { _err 'fitur ${_fn#pkg_} belum didukung untuk OS='\"\${OS:-unknown}\"; return 3; }"
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 17. Subcommand Dispatcher
+# -----------------------------------------------------------------------------
+case "$cmd" in
+    install)
+        _need_args "$@"
+        pkg_install "$@"
+        ;;
+    remove)
+        _need_args "$@"
+        pkg_remove "$@"
+        ;;
+    reinstall)
+        _need_args "$@"
+        pkg_reinstall "$@"
+        ;;
+    update)
+        pkg_update "$@"
+        ;;
+    upgrade)
+        pkg_upgrade "$@"
+        ;;
+    full-upgrade)
+        pkg_full_upgrade "$@"
+        ;;
+    search)
+        _need_args "$@"
+        pkg_search "$@"
+        ;;
+    info)
+        _need_args "$@"
+        pkg_info "$@"
+        ;;
+    list)
+        pkg_list "$@"
+        ;;
+    files)
+        _need_args "$@"
+        pkg_files "$@"
+        ;;
+    owner)
+        _need_args "$@"
+        pkg_owner "$@"
+        ;;
+    autoremove)
+        pkg_autoremove "$@"
+        ;;
+    orphans)
+        pkg_orphans "$@"
+        ;;
+    clean)
+        pkg_clean "$@"
+        ;;
+    autoclean)
+        pkg_autoclean "$@"
+        ;;
+    status)
+        do_status
+        ;;
+    detect)
+        do_detect
+        ;;
+    self-update)
+        do_self_update
+        ;;
+    uninstall)
+        do_uninstall
+        ;;
+    version|-v|--version)
+        do_version
+        ;;
+    help|-h|--help)
+        usage_cmd "${1:-}"
+        ;;
+    *)
+        _err "subcommand tidak dikenal: $cmd"
+        printf '\n' >&2
+        usage >&2
+        exit 2
+        ;;
+esac
