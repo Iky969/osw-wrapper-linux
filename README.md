@@ -1,4 +1,6 @@
-# osw
+# osw — One Simple Wrapper
+
+**Different distros. Same commands.**
 
 Satu perintah package manager untuk Debian/Ubuntu, Void, Alpine, Gentoo, dan
 Arch. `osw` mendeteksi *family* OS sekali saat instalasi, lalu memilih modul
