@@ -196,6 +196,22 @@ expect_out() {
     grep -qF -- "$1" "$OUT" || _fail "stdout tidak memuat: $1"
 }
 
+# Baris "DRY: ..." berawalan "sudo "/"doas " kalau tes dijalankan sebagai
+# non-root (perilaku _priv sesuai blueprint). Prefix itu diabaikan supaya tes
+# tidak bergantung pada apakah proses berjalan sebagai root.
+expect_dry() {
+    local want="$1"
+    sed -E 's/^DRY: (sudo|doas) /DRY: /' "$OUT" | grep -qxF -- "DRY: $want" \
+        || _fail "stdout tidak memuat baris: DRY: $want"
+}
+
+expect_dry_not() {
+    local want="$1"
+    if sed -E 's/^DRY: (sudo|doas) /DRY: /' "$OUT" | grep -qxF -- "DRY: $want"; then
+        _fail "stdout seharusnya tidak memuat baris: DRY: $want"
+    fi
+}
+
 expect_out_not() {
     if grep -qF -- "$1" "$OUT"; then
         _fail "stdout seharusnya tidak memuat: $1"
@@ -643,35 +659,35 @@ test_void_dry_run() {
 
     bin_run "$SB/bin/osw" -n install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-install neovim" || return 1
+    expect_dry "xbps-install neovim" || return 1
 
     bin_run "$SB/bin/osw" -n -y install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-install -y neovim" || return 1
+    expect_dry "xbps-install -y neovim" || return 1
 
     bin_run "$SB/bin/osw" -n remove neovim
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-remove neovim" || return 1
+    expect_dry "xbps-remove neovim" || return 1
 
     bin_run "$SB/bin/osw" -n update
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-install -S" || return 1
+    expect_dry "xbps-install -S" || return 1
 
     bin_run "$SB/bin/osw" -n upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-install -u" || return 1
+    expect_dry "xbps-install -u" || return 1
 
     bin_run "$SB/bin/osw" -n -y full-upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-install -Su -y" || return 1
+    expect_dry "xbps-install -Su -y" || return 1
 
     bin_run "$SB/bin/osw" -n autoremove
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-remove -o" || return 1
+    expect_dry "xbps-remove -o" || return 1
 
     bin_run "$SB/bin/osw" -n clean
     expect_rc 0 || return 1
-    expect_out "DRY: xbps-remove -O" || return 1
+    expect_dry "xbps-remove -O" || return 1
 }
 
 test_void_autoclean_unsupported() {
@@ -693,31 +709,31 @@ test_alpine_dry_run() {
 
     bin_run "$SB/bin/osw" -n install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: apk add neovim" || return 1
+    expect_dry "apk add neovim" || return 1
 
     bin_run "$SB/bin/osw" -n -y install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: apk add --no-interactive neovim" || return 1
+    expect_dry "apk add --no-interactive neovim" || return 1
 
     bin_run "$SB/bin/osw" -n remove neovim
     expect_rc 0 || return 1
-    expect_out "DRY: apk del neovim" || return 1
+    expect_dry "apk del neovim" || return 1
 
     bin_run "$SB/bin/osw" -n update
     expect_rc 0 || return 1
-    expect_out "DRY: apk update" || return 1
+    expect_dry "apk update" || return 1
 
     bin_run "$SB/bin/osw" -n upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: apk upgrade" || return 1
+    expect_dry "apk upgrade" || return 1
 
     bin_run "$SB/bin/osw" -n full-upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: apk upgrade" || return 1
+    expect_dry "apk upgrade" || return 1
 
     bin_run "$SB/bin/osw" -n clean
     expect_rc 0 || return 1
-    expect_out "DRY: apk cache clean" || return 1
+    expect_dry "apk cache clean" || return 1
 }
 
 test_alpine_autoremove_noop() {
@@ -756,30 +772,30 @@ test_gentoo_dry_run() {
 
     bin_run "$SB/bin/osw" -n update
     expect_rc 0 || return 1
-    expect_out "DRY: emerge --sync" || return 1
+    expect_dry "emerge --sync" || return 1
 
     # Tanpa -y emerge harus tetap bertanya (--ask).
     bin_run "$SB/bin/osw" -n install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: emerge --ask neovim" || return 1
+    expect_dry "emerge --ask neovim" || return 1
 
     bin_run "$SB/bin/osw" -n -y install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: emerge neovim" || return 1
-    expect_out_not "DRY: emerge --ask neovim" || return 1
+    expect_dry "emerge neovim" || return 1
+    expect_dry_not "emerge --ask neovim" || return 1
 
     bin_run "$SB/bin/osw" -n upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: emerge -uDN @world --ask" || return 1
+    expect_dry "emerge -uDN @world --ask" || return 1
 
     bin_run "$SB/bin/osw" -n -y full-upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: emerge -uDN @world" || return 1
+    expect_dry "emerge -uDN @world" || return 1
     expect_out_not "--ask" || return 1
 
     bin_run "$SB/bin/osw" -n remove neovim
     expect_rc 0 || return 1
-    expect_out "DRY: emerge --unmerge --ask neovim" || return 1
+    expect_dry "emerge --unmerge --ask neovim" || return 1
 }
 
 test_gentoo_autoremove_pretend() {
@@ -789,11 +805,11 @@ test_gentoo_autoremove_pretend() {
     # Tanpa -y: hanya pretend, tidak ada yang dihapus.
     bin_run "$SB/bin/osw" -n autoremove
     expect_rc 0 || return 1
-    expect_out "DRY: emerge -p --depclean" || return 1
+    expect_dry "emerge -p --depclean" || return 1
 
     bin_run "$SB/bin/osw" -n -y autoremove
     expect_rc 0 || return 1
-    expect_out "DRY: emerge --depclean" || return 1
+    expect_dry "emerge --depclean" || return 1
     expect_out_not "emerge -p --depclean" || return 1
 }
 
@@ -830,33 +846,33 @@ test_arch_dry_run() {
 
     bin_run "$SB/bin/osw" -n install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -S neovim" || return 1
+    expect_dry "pacman -S neovim" || return 1
 
     # -y di pacman berarti refresh database, jadi non-interaktif memakai
     # --noconfirm.
     bin_run "$SB/bin/osw" -n -y install neovim
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -S --noconfirm neovim" || return 1
+    expect_dry "pacman -S --noconfirm neovim" || return 1
 
     bin_run "$SB/bin/osw" -n remove neovim
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -Rns neovim" || return 1
+    expect_dry "pacman -Rns neovim" || return 1
 
     bin_run "$SB/bin/osw" -n update
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -Sy" || return 1
+    expect_dry "pacman -Sy" || return 1
 
     bin_run "$SB/bin/osw" -n -y upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -Su --noconfirm" || return 1
+    expect_dry "pacman -Su --noconfirm" || return 1
 
     bin_run "$SB/bin/osw" -n full-upgrade
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -Syu" || return 1
+    expect_dry "pacman -Syu" || return 1
 
     bin_run "$SB/bin/osw" -n -y clean
     expect_rc 0 || return 1
-    expect_out "DRY: pacman -Sc --noconfirm" || return 1
+    expect_dry "pacman -Sc --noconfirm" || return 1
 }
 
 test_arch_autoremove() {
