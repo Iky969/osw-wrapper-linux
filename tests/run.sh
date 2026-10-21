@@ -4,7 +4,8 @@
 #
 # Harness tes osw.
 # Hermetik: setiap tes mendapat HOME + XDG_* sendiri di direktori sementara,
-# tanpa root, tanpa apt, tanpa network. Perintah paket hanya diuji dengan -n.
+# tanpa root, tanpa apt, tanpa network. Perintah paket hanya diuji dengan -n;
+# installer hanya diuji pada path lokal (mode pipe diuji tanpa network).
 #
 # Pemakaian: bash tests/run.sh
 # Exit: 0 kalau semua tes lulus, 1 kalau ada yang gagal.
@@ -64,6 +65,17 @@ bin_run() {
 
 installer_run() {
     _sandbox_env bash "$INSTALLER" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
+# Mode pipe: skrip dibaca dari stdin (BASH_SOURCE kosong), proxy diblokir supaya
+# tes tidak menyentuh network.
+installer_pipe_run() {
+    _sandbox_env \
+        https_proxy="http://127.0.0.1:9" \
+        http_proxy="http://127.0.0.1:9" \
+        bash <"$INSTALLER" >"$OUT" 2>"$ERR"
     RC=$?
     return 0
 }
@@ -129,6 +141,15 @@ expect_file_contains() {
 
 expect_file_matches() {
     grep -qE -- "$2" "$1" || _fail "$1 tidak cocok pola: $2"
+}
+
+expect_file_lines() {
+    local file="$1"
+    local want="$2"
+    local got
+    got="$(wc -l <"$file")"
+    got="${got//[[:space:]]/}"
+    [[ "$got" == "$want" ]] || _fail "$file punya $got baris, seharusnya $want"
 }
 
 # -----------------------------------------------------------------------------
@@ -270,6 +291,174 @@ test_list_invalid_option() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase 3: install.sh
+# -----------------------------------------------------------------------------
+test_installer_help() {
+    installer_run --help
+    expect_rc 0 || return 1
+    expect_out "Usage: install.sh" || return 1
+    expect_out "--no-path-hint" || return 1
+}
+
+test_installer_unknown_arg() {
+    installer_run --bogus
+    expect_rc 1 || return 1
+    expect_err "argumen tidak dikenal: --bogus" || return 1
+}
+
+test_installer_missing_option_value() {
+    installer_run --prefix
+    expect_rc 1 || return 1
+    expect_err "opsi --prefix membutuhkan nilai" || return 1
+}
+
+test_installer_unknown_os() {
+    installer_run --os unknown
+    expect_rc 1 || return 1
+    expect_err "OS tidak didukung: unknown" || return 1
+    expect_err "debian, void, alpine, gentoo, arch" || return 1
+    expect_absent "$SB/cfg/osw/os.conf" || return 1
+}
+
+test_installer_missing_module() {
+    installer_run --os void
+    expect_rc 1 || return 1
+    expect_err "modul untuk OS=void belum tersedia" || return 1
+    expect_absent "$SB/cfg/osw/os.conf" || return 1
+    expect_absent "$SB/bin/osw" || return 1
+}
+
+test_installer_debian() {
+    installer_run --os debian
+    expect_rc 0 || return 1
+    expect_file "$SB/cfg/osw/os.conf" || return 1
+    expect_file_lines "$SB/cfg/osw/os.conf" 3 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+    expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T' || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=0.1.0" || return 1
+    expect_exec "$SB/bin/osw" || return 1
+    expect_file "$SB/data/osw/os/debian.sh" || return 1
+
+    bin_run "$SB/bin/osw" version
+    expect_rc 0 || return 1
+    expect_out "osw 0.1.0 (OS=debian)" || return 1
+
+    bin_run "$SB/bin/osw" status
+    expect_rc 0 || return 1
+    expect_out "OS           : debian" || return 1
+}
+
+test_installer_os_equals_form() {
+    installer_run --os=debian --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+}
+
+test_installer_path_hint() {
+    installer_run --os debian
+    expect_rc 0 || return 1
+    expect_out "belum ada di PATH" || return 1
+    expect_out "export PATH=" || return 1
+    expect_out ".bashrc" || return 1
+}
+
+test_installer_no_path_hint() {
+    installer_run --os debian --no-path-hint
+    expect_rc 0 || return 1
+    expect_out_not "export PATH=" || return 1
+}
+
+test_installer_idempotent() {
+    installer_run --os debian --no-path-hint
+    expect_rc 0 || return 1
+    installer_run --os debian --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+    bin_run "$SB/bin/osw" version
+    expect_rc 0 || return 1
+}
+
+test_installer_prefix() {
+    installer_run --os debian --prefix "$SB/prefix" --no-path-hint
+    expect_rc 0 || return 1
+    expect_exec "$SB/prefix/bin/osw" || return 1
+    expect_absent "$SB/bin/osw" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=debian" || return 1
+
+    bin_run "$SB/prefix/bin/osw" version
+    expect_rc 0 || return 1
+    expect_out "OS=debian" || return 1
+}
+
+test_installer_keeps_installed_at() {
+    mkdir -p "$SB/cfg/osw"
+    printf 'OS=debian\nINSTALLED_AT=2000-01-01T00:00:00Z\nVERSION=0.1.0\n' \
+        >"$SB/cfg/osw/os.conf"
+    installer_run --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "INSTALLED_AT=2000-01-01T00:00:00Z" || return 1
+}
+
+test_installer_redetect_refreshes_installed_at() {
+    mkdir -p "$SB/cfg/osw"
+    printf 'OS=debian\nINSTALLED_AT=2000-01-01T00:00:00Z\nVERSION=0.1.0\n' \
+        >"$SB/cfg/osw/os.conf"
+    installer_run --redetect --os debian --no-path-hint
+    expect_rc 0 || return 1
+    expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T' || return 1
+    if grep -qF "INSTALLED_AT=2000-01-01T00:00:00Z" "$SB/cfg/osw/os.conf"; then
+        _fail "--redetect tidak memperbarui INSTALLED_AT"
+        return 1
+    fi
+}
+
+test_installer_uninstall_delegates() {
+    installer_run --os debian --no-path-hint
+    expect_rc 0 || return 1
+    expect_exec "$SB/bin/osw" || return 1
+
+    installer_run --uninstall -y
+    expect_rc 0 || return 1
+    expect_absent "$SB/bin/osw" || return 1
+    expect_absent "$SB/data/osw" || return 1
+    expect_absent "$SB/cfg/osw" || return 1
+}
+
+test_installer_uninstall_with_prefix() {
+    installer_run --os debian --prefix "$SB/prefix" --no-path-hint
+    expect_rc 0 || return 1
+    expect_exec "$SB/prefix/bin/osw" || return 1
+
+    installer_run --uninstall -y --prefix "$SB/prefix"
+    expect_rc 0 || return 1
+    expect_absent "$SB/prefix/bin/osw" || return 1
+    expect_absent "$SB/data/osw" || return 1
+    expect_absent "$SB/cfg/osw" || return 1
+}
+
+test_installer_uninstall_without_binary() {
+    mkdir -p "$SB/data/osw/os" "$SB/cfg/osw"
+    printf 'OS=debian\nINSTALLED_AT=2026-01-01T00:00:00Z\nVERSION=0.1.0\n' \
+        >"$SB/cfg/osw/os.conf"
+    installer_run --uninstall -y
+    expect_rc 0 || return 1
+    expect_absent "$SB/data/osw" || return 1
+    expect_absent "$SB/cfg/osw" || return 1
+    expect_out "membersihkan sisa direktori" || return 1
+}
+
+test_installer_pipe_mode_without_network() {
+    installer_pipe_run
+    expect_rc 1 || return 1
+    expect_err "gagal mengunduh" || return 1
+    expect_err "git clone" || return 1
+    if grep -qF "unbound variable" "$ERR"; then
+        _fail "installer gagal karena unbound variable"
+        return 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
 run_test() {
@@ -325,6 +514,25 @@ run_test "modul tidak ada -> exit 3"         test_missing_module_returns_3
 run_test "install tanpa argumen"             test_install_without_args
 run_test "files tanpa argumen"               test_files_without_args
 run_test "list opsi tidak dikenal"           test_list_invalid_option
+
+printf -- '\n--- Fase 3: install.sh ---\n'
+run_test "installer --help"                     test_installer_help
+run_test "installer argumen tidak dikenal"      test_installer_unknown_arg
+run_test "installer opsi tanpa nilai"           test_installer_missing_option_value
+run_test "installer OS unknown"                 test_installer_unknown_os
+run_test "installer modul belum tersedia"       test_installer_missing_module
+run_test "installer deploy debian"              test_installer_debian
+run_test "installer --os=debian"                test_installer_os_equals_form
+run_test "installer PATH hint"                  test_installer_path_hint
+run_test "installer --no-path-hint"             test_installer_no_path_hint
+run_test "installer idempotent"                 test_installer_idempotent
+run_test "installer --prefix"                   test_installer_prefix
+run_test "installer pertahankan INSTALLED_AT"   test_installer_keeps_installed_at
+run_test "installer --redetect"                 test_installer_redetect_refreshes_installed_at
+run_test "installer --uninstall delegasi"       test_installer_uninstall_delegates
+run_test "installer --uninstall dengan prefix"  test_installer_uninstall_with_prefix
+run_test "installer --uninstall tanpa binary"   test_installer_uninstall_without_binary
+run_test "installer mode pipe tanpa network"    test_installer_pipe_mode_without_network
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 

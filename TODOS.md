@@ -16,7 +16,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 0 | Kerangka repo | selesai | manual: `bin/`, `os/`, `install.sh`, `README.md`, `.shellcheckrc`, `VERSION`=0.1.0 |
 | 1 | `bin/osw` dispatcher | selesai | otomatis: help, flag, version, status, detect, fallback 3 (lihat `tests/run.sh`) |
 | 2 | `os/debian.sh` | selesai (16 fungsi) | otomatis: hanya mode `-n` (dry-run); **eksekusi apt nyata belum diuji** |
-| 3 | `install.sh` | **belum** (masih stub 2 baris) | belum ada |
+| 3 | `install.sh` | selesai (11 poin blueprint) | otomatis: 17 tes Fase 3; mode pipe lewat network belum diuji |
 | 4 | `os/void.sh` | belum | — |
 | 5 | `os/alpine.sh` | belum | — |
 | 6 | `os/gentoo.sh` | belum | — |
@@ -58,6 +58,46 @@ dispatcher). Pola `local -a yes=()` dihormati.
 Belum diuji: eksekusi `apt-get` sungguhan (butuh container/VM sekali pakai),
 `pkg_orphans` (`apt-get -s autoremove`), `pkg_owner` pada path yang tidak ada.
 
+## Detail Fase 3 — `install.sh`
+
+Selesai. Implementasi mengikuti blueprint poin 1-11:
+
+1. Header `set -euo pipefail`; lokasi sumber lewat `BASH_SOURCE` + `readlink -f`.
+2. `CONF_DIR`, `DATA_DIR`, `BIN_DIR`, `CONF` identik dengan `bin/osw`.
+3. `detect_os` sama dengan dispatcher: alpine, void, gentoo/funtoo,
+   debian/ubuntu/mint/linuxmint/pop/kali, arch/manjaro/endeavouros, else unknown.
+4. Parser: `--os`, `--os=`, `--redetect`, `--prefix`, `--no-path-hint`,
+   `--uninstall`, `-h/--help`. Tambahan `-y/--yes` khusus `--uninstall` supaya
+   bisa dipakai non-interaktif.
+5. Preflight: OS tidak didukung → exit 1 + daftar OS; modul tidak ada → exit 1;
+   `bin/osw` tidak ada → exit 1.
+6. Deploy modul: `cp -f "$SRC"/os/*.sh "$DATA_DIR/os/"`.
+7. Deploy dispatcher: `install -m 755 "$SRC/bin/osw" "$BIN_DIR/osw"`.
+8. Config 3 baris (`OS`, `INSTALLED_AT`, `VERSION`). `INSTALLED_AT` dipertahankan
+   kalau config sudah ada, dan hanya diperbarui dengan `--redetect`.
+9. PATH hint dicetak saja; rc file tidak pernah diubah otomatis.
+10. Self-test `osw version` + `osw status` setelah deploy; gagal → exit 1.
+11. `--uninstall` delegasi ke `osw uninstall`; kalau binary tidak ada, sisa
+    direktori dibersihkan sendiri.
+
+Keputusan desain yang perlu diketahui:
+
+- **Semantik `--prefix`**: hanya memindahkan binary (`<prefix>/bin/osw`). Data dan
+  config tetap mengikuti XDG, karena `bin/osw` menghitung `DATA_DIR`/`CONF_DIR`
+  dari XDG; memindahkannya akan membuat dispatcher tidak menemukan modul.
+  `install.sh --uninstall --prefix <dir>` menghapus binary prefix itu secara
+  eksplisit karena dispatcher hanya tahu `BIN_DIR` versi XDG.
+- **Mode pipe** (`curl ... | bash`): `BASH_SOURCE` kosong, jadi installer
+  mengunduh snapshot `codeload.github.com/<repo>/tar.gz/refs/heads/<ref>` ke
+  direktori sementara (butuh `curl`, `tar`, network). Repo/ref bisa di-override
+  lewat `OSW_UPSTREAM_REPO`/`OSW_UPSTREAM_REF`.
+- `--os <nama>` menerima nama modul (`debian`, `void`, ...), bukan `ID` mentah
+  dari `/etc/os-release`.
+- Installer tidak memanggil `apt` sama sekali.
+
+Belum diuji: unduhan mode pipe yang sukses (butuh network + repo publik) dan
+instalasi di OS selain container Ubuntu ini.
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI, belum diperbaiki
@@ -75,14 +115,17 @@ Belum diuji: eksekusi `apt-get` sungguhan (butuh container/VM sekali pakai),
 
 ### 2. Cakupan uji belum lengkap
 
+- `tests/run.sh` berisi 36 tes hermetik: 19 tes Fase 0-2 + 17 tes Fase 3.
 - Fase 8 (`tests/smoke.sh`, `tests/contract.sh`, 4 container) belum dikerjakan.
-  `tests/run.sh` saat ini memuat tes Fase 0-2 (+ Fase 3 nanti) dan dirancang agar
-  bisa ditambah.
+  `tests/run.sh` dirancang agar bisa ditambah.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
   (lingkungan kerja ini Ubuntu 22.04, dijalankan sebagai root di container).
+- Mode pipe baru diuji pada jalur gagal (network diblokir via proxy); jalur
+  unduh + install sukses belum diuji.
 
 ## Riwayat langkah
 
 - `chore: tambahkan AGENTS.md, TODOS.md, tests/run.sh` — harness hermetik + 19
   tes Fase 0-2 (19 lulus).
-- Fase 3 (`install.sh`) — belum dikerjakan.
+- `feat(fase3): install.sh` — installer + 17 tes Fase 3 (36 tes total, 36 lulus).
+- Berikutnya: Fase 4 (`os/void.sh`).
