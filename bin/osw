@@ -437,6 +437,14 @@ do_self_update() {
     fi
 
     bash "$tmp_installer"
+
+    # Installer menulis ulang config; muat lagi supaya status di bawah
+    # menampilkan versi yang baru terpasang, bukan versi proses ini.
+    if [[ -f "$CONF" ]]; then
+        # shellcheck disable=SC1090
+        . "$CONF"
+    fi
+
     do_status
 }
 

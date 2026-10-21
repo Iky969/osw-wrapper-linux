@@ -178,7 +178,7 @@ bash install.sh --uninstall -y
 OS=debian
 OS_NAME=Debian\ GNU/Linux\ 12\ \(bookworm\)
 INSTALLED_AT=2026-10-21T06:01:13Z
-VERSION=0.1.1
+VERSION=0.1.2
 ```
 
 - `OS` adalah *family* yang dipakai memilih `os/$OS.sh`. Nilainya hanya

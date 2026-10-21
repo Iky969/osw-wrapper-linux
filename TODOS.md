@@ -22,7 +22,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-21.
 | 6 | `os/gentoo.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
-| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow + regresi installer file tunggal; **terverifikasi di GitHub**: run `74e2ed8` sukses dan CI membuat tag + Release `v0.1.0`; `v0.1.1` (perbaikan self-update) menunggu run CI |
+| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow + regresi installer file tunggal; **terverifikasi di GitHub**: CI membuat tag + Release `v0.1.0` dan `v0.1.1`; `v0.1.2` (perbaikan tampilan status) menunggu run CI |
 
 ## Detail Fase 0-2
 
@@ -300,10 +300,24 @@ Hasil run kedua (push `997b086`, `fd48258`):
   sudah terbit; memperbarui tag lama akan memutus checksum yang sudah
   diumumkan). Pengguna 0.1.0 perlu sekali menjalankan ulang installer rilis
   0.1.1 karena `self-update` di versi lama tidak bisa memperbaiki dirinya.
+- Terverifikasi: CI membuat tag + Release `v0.1.1` (aset checksum cocok), dan
+  `osw self-update` dari instalasi 0.1.0 berhasil memasang 0.1.1 (installer
+  diunduh dari tag, checksum diverifikasi, sumber diunduh dari tag).
+
+### 4. BUG tampilan (Fase 1): status setelah self-update mencetak versi lama — DIPERBAIKI (0.1.2)
+
+- Reproduksi: setelah `self-update` 0.1.0 → 0.1.1 berhasil, baris
+  `osw version : 0.1.0` masih tercetak karena proses yang berjalan memuat
+  config lama di awal; config di disk sudah `VERSION=0.1.1`.
+- Status: **diperbaiki** di `bin/osw` — config di-`source` ulang setelah
+  installer dijalankan, baru `do_status` dipanggil. `VERSION` dinaikkan ke
+  **0.1.2** agar perbaikan ini ikut terpasang lewat rilis.
+- Verifikasi rencana: pasang 0.1.2, set `VERSION=0.1.1` di config sandbox,
+  jalankan `self-update`; status harus mencetak 0.1.2, bukan 0.1.1.
 
 Belum diverifikasi (butuh GitHub, di luar lingkungan ini):
 
-- job `release` pada push `v0.1.1` (tag + Release baru);
+- job `release` pada push `v0.1.2` (tag + Release baru);
 - izin `contents: write` pada repo asli (branch protection, Actions token).
 
 ## Item terbuka
