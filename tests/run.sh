@@ -69,6 +69,17 @@ installer_run() {
     return 0
 }
 
+# Jalankan osw dengan proxy yang tidak bisa dihubungi: memastikan jalur network
+# gagal dengan pesan jelas, tanpa benar-benar menyentuh internet.
+osw_run_blocked_network() {
+    _sandbox_env \
+        https_proxy="http://127.0.0.1:9" \
+        http_proxy="http://127.0.0.1:9" \
+        bash "$OSW" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
 # Mode pipe: skrip dibaca dari stdin (BASH_SOURCE kosong), proxy diblokir supaya
 # tes tidak menyentuh network.
 installer_pipe_run() {
@@ -281,6 +292,19 @@ test_files_without_args() {
     osw_run files
     expect_rc 1 || return 1
     expect_err "membutuhkan minimal 1 argumen" || return 1
+}
+
+test_self_update_fails_cleanly_without_network() {
+    # Regresi: baris 372 lama memakai $expected_sha sebelum dideklarasikan,
+    # sehingga self-update mati dengan "unbound variable".
+    prepare_debian_config
+    osw_run_blocked_network self-update
+    expect_rc 1 || return 1
+    expect_err "gagal mengunduh" || return 1
+    if grep -qF "unbound variable" "$ERR"; then
+        _fail "self-update gagal karena unbound variable"
+        return 1
+    fi
 }
 
 test_list_invalid_option() {
@@ -514,6 +538,7 @@ run_test "modul tidak ada -> exit 3"         test_missing_module_returns_3
 run_test "install tanpa argumen"             test_install_without_args
 run_test "files tanpa argumen"               test_files_without_args
 run_test "list opsi tidak dikenal"           test_list_invalid_option
+run_test "self-update gagal tanpa network"   test_self_update_fails_cleanly_without_network
 
 printf -- '\n--- Fase 3: install.sh ---\n'
 run_test "installer --help"                     test_installer_help

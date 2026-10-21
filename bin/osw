@@ -369,11 +369,6 @@ do_self_update() {
     local target_ver="$VERSION"
     local target_url="$UPSTREAM_URL"
 
-    if [[ -z "$expected_sha" ]]; then
-    _err "checksum SHA-256 tidak tersedia untuk $target_url, pembaruan dibatalkan"
-    return 1
-    fi
-    
     local fetched_ver=""
     if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
         target_ver="$fetched_ver"
@@ -395,15 +390,20 @@ do_self_update() {
         return 1
     fi
 
+    # Checksum wajib: installer diunduh lalu dieksekusi, jadi tidak boleh
+    # dijalankan tanpa verifikasi (kalau .sha256 tidak tersedia, batalkan).
     local sha_url="${target_url}.sha256"
     local expected_sha=""
-    if expected_sha="$(curl -fsSL "$sha_url" 2>/dev/null | awk '{print $1}')" && [[ -n "$expected_sha" ]]; then
-        local actual_sha
-        actual_sha="$(sha256sum "$tmp_installer" | awk '{print $1}')"
-        if [[ "$actual_sha" != "$expected_sha" ]]; then
-            _err "verifikasi checksum SHA-256 gagal ($actual_sha != $expected_sha)"
-            return 1
-        fi
+    if ! expected_sha="$(curl -fsSL "$sha_url" 2>/dev/null | awk '{print $1}')" || [[ -z "$expected_sha" ]]; then
+        _err "checksum SHA-256 tidak tersedia untuk $target_url, pembaruan dibatalkan"
+        return 1
+    fi
+
+    local actual_sha
+    actual_sha="$(sha256sum "$tmp_installer" | awk '{print $1}')"
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        _err "verifikasi checksum SHA-256 gagal ($actual_sha != $expected_sha)"
+        return 1
     fi
 
     bash "$tmp_installer"

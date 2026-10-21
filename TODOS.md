@@ -100,7 +100,7 @@ instalasi di OS selain container Ubuntu ini.
 
 ## Item terbuka
 
-### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI, belum diperbaiki
+### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
 
 - Verifikasi statis:
   `grep -n expected_sha bin/osw` →
@@ -110,12 +110,21 @@ instalasi di OS selain container Ubuntu ini.
   dengan `bin/osw: line 372: expected_sha: unbound variable`.
 - Dampak: `self-update` berhenti sebelum mengunduh apa pun; verifikasi SHA-256 di
   blok sesudahnya juga tidak pernah menjadi wajib.
-- Status: **belum diperbaiki**. Dijadwalkan sebagai commit `fix(...)` terpisah,
-  bukan dicampur ke commit fase.
+- Status: **diperbaiki** di commit `fix(self-update): ...` (commit terpisah, di
+  luar fase, sesuai aturan). Perbaikan: pemakaian `$expected_sha` sebelum
+  deklarasi dihapus; checksum sekarang **wajib** diunduh dan dicocokkan sebelum
+  `bash "$tmp_installer"` dijalankan.
+- Konsekuensi yang perlu diketahui: `self-update` hanya akan berjalan kalau file
+  `<url install.sh>.sha256` tersedia di upstream. Fase 9 perlu menerbitkan file
+  tersebut bersama installer bertag.
+- Regresi dijaga oleh tes "self-update gagal tanpa network" di `tests/run.sh`
+  (memastikan tidak ada lagi `unbound variable` dan kegagalan network dilaporkan
+  dengan pesan jelas).
 
 ### 2. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 36 tes hermetik: 19 tes Fase 0-2 + 17 tes Fase 3.
+- `tests/run.sh` berisi 37 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+  self-update, dan 17 tes Fase 3.
 - Fase 8 (`tests/smoke.sh`, `tests/contract.sh`, 4 container) belum dikerjakan.
   `tests/run.sh` dirancang agar bisa ditambah.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
@@ -128,4 +137,6 @@ instalasi di OS selain container Ubuntu ini.
 - `chore: tambahkan AGENTS.md, TODOS.md, tests/run.sh` — harness hermetik + 19
   tes Fase 0-2 (19 lulus).
 - `feat(fase3): install.sh` — installer + 17 tes Fase 3 (36 tes total, 36 lulus).
+- `fix(self-update): perbaiki unbound variable & wajibkan checksum SHA-256` —
+  perbaikan bug Fase 1 di commit terpisah (37 tes total, 37 lulus).
 - Berikutnya: Fase 4 (`os/void.sh`).
