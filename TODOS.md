@@ -227,19 +227,33 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
 
 ### Rilis otomatis (lanjutan Fase 9)
 
-- `.github/workflows/ci.yml`:
-  - job `test` pada setiap push ke `main` + pull request: `bash -n`,
-    `shellcheck -S warning`, `tests/run.sh`, `tests/smoke.sh --stub`,
-    `tests/contract.sh`.
-  - job `release` (butuh `test` hijau, hanya push `main` atau
-    `workflow_dispatch`): validasi `VERSION` (`X.Y.Z`) dan
-    `DEFAULT_VERSION` di `install.sh`, lewati kalau tag `v<VERSION>` sudah ada
-    (tapi verifikasi checksum-nya), kalau belum: tulis
-    `install.sh.sha256`, commit `[skip ci]`, buat annotated tag, push tag,
-    lalu `gh release create` dengan aset `install.sh` + `install.sh.sha256`.
-  - Perlu `permissions: contents: write`; branch protection harus mengizinkan
-    bot Actions push commit checksum + tag, atau jalankan manual lewat
-    `workflow_dispatch`.
+- `.github/workflows/ci.yml` (2026-10-22, dipisah dari workflow rilis):
+  - pemicu `push` ke `main` dan `pull_request`.
+  - job `lint`: `bash -n bin/osw install.sh os/*.sh tests/*.sh`, lalu
+    shellcheck **v0.10.0** dari binary statis GitHub release (bukan apt)
+    dengan `-S warning` untuk `bin/osw install.sh os/*.sh tests/run.sh
+    tests/smoke.sh tests/contract.sh`.
+  - job `test`: `needs: lint`, matriks container `ubuntu:22.04`,
+    `ubuntu:24.04`, `debian:bookworm`, `fail-fast: false`; tiap container
+    memasang `ca-certificates coreutils curl git tar xz-utils` (git wajib
+    untuk `actions/checkout`) lalu menjalankan `bash tests/run.sh`.
+  - Tidak ada container Void/Alpine/Gentoo di job ini (fase terpisah).
+- `.github/workflows/release.yml` (job rilis dipindah dari `ci.yml`):
+  - pemicu `push` branch `main`, `push` tag `v*`, dan `workflow_dispatch`.
+  - job `test` (matriks sama dengan `ci.yml`) lalu job `release` dengan
+    `needs: test` — rilis hanya terbit kalau tes hijau, termasuk saat dipicu
+    push tag. Konsekuensi pilihan gate (b): pada push ke `main` matriks tes
+    berjalan dua kali (`ci.yml` dan `release.yml`).
+  - validasi `VERSION` (`X.Y.Z`) + `DEFAULT_VERSION`; pada push tag, nama tag
+    harus sama dengan `v$VERSION`.
+  - tag belum ada: tulis `install.sh.sha256`, commit `[skip ci]` bila berubah,
+    lalu `gh release create --target <sha>` dengan aset `install.sh` +
+    `install.sh.sha256`.
+  - tag sudah ada: verifikasi checksum terhadap isi tag, dan buat Release
+    untuk tag itu kalau belum ada (`--verify-tag`, tag tidak dipindah).
+  - Perlu `permissions: contents: write` pada job rilis; branch protection
+    harus mengizinkan bot Actions push commit checksum, atau jalankan manual
+    lewat `workflow_dispatch`.
 - `install.sh.sha256` di-commit di root repo supaya tag pertama langsung
   punya checksum dan `osw self-update` tidak pernah melihat tag tanpa
   `.sha256`.
@@ -367,22 +381,23 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 - **`self-update` mengabaikan dry-run** — `bin/osw -n self-update` tetap
   mengunduh dan menjalankan installer. Diperbaiki: `OSW_DRY=1` berhenti sebelum
   `mktemp`/unduhan apa pun. Perilaku pesan (putusan review 2026-10-22):
-  versi upstream tetap dibaca lebih dulu (read-only, satu `curl` ke
-  `VERSION`) supaya URL target yang dicetak benar; kalau upstream tidak
-  terjangkau, versi lokal dipakai dan dilabeli
-  `DRY: self-update dari <URL> — upstream tidak terjangkau, memakai versi
-  lokal <VERSION>`. Kompromi yang disadari: pesan versi lokal yang
-  tidak dilabeli bisa menyesatkan kalau upstream sudah lebih baru, jadi
-  label fallback itu wajib ada.
-- Regresi dijaga 4 tes baru di `tests/run.sh`: `_run mengembalikan rc &
-  dry-run`, `self-update dry-run fallback versi lokal` (curl stub gagal +
-  proxy `127.0.0.1:9`: hanya `/main/VERSION` dibaca, installer tidak diunduh,
-  label fallback ada, tidak ada file sementara), `self-update dry-run pakai
-  versi upstream` (curl stub mengembalikan `9.9.9`: URL `v9.9.9` dicetak,
-  label fallback tidak ada), dan `self-update mencabut RETURN trap`
-  (`trap -p RETURN` kosong dan `source` berikutnya tidak mematikan shell).
-  Semua tes kecuali `_run` **gagal** kalau dijalankan pada `bin/osw` sebelumnya
-  (diverifikasi dengan salinan repo berisi `bin/osw` dari `HEAD`).
+  `VERSION` upstream dibaca lebih dulu dengan `curl --max-time 5` (read-only)
+  supaya URL target yang dicetak benar. Kalau berhasil, pesan berlabel
+  `DRY: self-update dari <URL v<VERSION> upstream> (upstream)`; kalau gagal,
+  versi lokal dipakai dengan label `(lokal, upstream tidak terjangkau)`.
+  Installer tidak pernah diunduh, `mktemp` tidak dipanggil, tidak ada eksekusi.
+  Hook pengujian: `OSW_VERSION_URL` menimpa URL `VERSION` (dipakai tes untuk
+  arahkan ke `http://127.0.0.1:9` dan ke `file://...`).
+- Regresi dijaga 5 tes di `tests/run.sh`: `_run mengembalikan rc & dry-run`,
+  `self-update dry-run label offline` (curl asli + `OSW_VERSION_URL` ke alamat
+  ditolak: label lokal, tanpa unduhan), `self-update dry-run label upstream`
+  (`OSW_VERSION_URL=file://...` berisi `9.9.9`: URL `v9.9.9` + label
+  `(upstream)`), `self-update dry-run tanpa unduhan` (curl stub mencatat semua
+  pemanggilan: hanya `/main/VERSION`, tidak ada `/install.sh` maupun `-o`),
+  dan `self-update mencabut RETURN trap` (`trap -p RETURN` kosong dan `source`
+  berikutnya tidak mematikan shell). Empat tes **gagal** kalau dijalankan pada
+  `bin/osw` sebelumnya (diverifikasi dengan salinan repo berisi `bin/osw` dari
+  `HEAD`); `_run` hanya berbeda secara struktural.
 - Belum dirilis: `VERSION` sengaja tidak diubah di commit ini, jadi rilis
   berikutnya perlu menaikkan `VERSION` + `DEFAULT_VERSION` di `install.sh`.
 
@@ -404,8 +419,8 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ### 5. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 66 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
-  self-update, 4 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
+- `tests/run.sh` berisi 67 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+  self-update, 5 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
   11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, dan 5 tes rilis (checksum,
   `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
   tunggal mengunduh sumber, kelengkapan workflow).
@@ -415,8 +430,10 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   (lingkungan kerja ini Ubuntu 22.04, dijalankan sebagai root di container).
 - Mode pipe baru diuji pada jalur gagal (network diblokir via stub/ proxy);
   jalur unduh + install sukses belum diuji.
-- Workflow CI baru divalidasi secara lokal (YAML di-parse, langkah
-  baca-`VERSION` dijalankan, `shellcheck` 0 warning); belum ada run sungguhan.
+- Workflow baru divalidasi lokal (YAML di-parse dengan PyYAML + actionlint
+  1.7.7 bersih, `shellcheck` 0 warning); matriks container belum pernah
+  dijalankan di GitHub saat commit ini dibuat, jadi hasil run pertama masih
+  harus diperiksa dan status "hijau" belum boleh ditandai.
 
 ## Riwayat langkah
 
@@ -454,3 +471,10 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   pembacaan `VERSION` upstream dipindah ke awal `do_self_update` dan dipakai
   bersama oleh dry-run dan jalur unduh; pesan `DRY:` tidak lagi menampilkan
   versi lokal tanpa keterangan (66 tes total, 66 lulus; shellcheck 0 warning).
+- `ci: tambahkan workflow test dan gate rilis` — `ci.yml` dipecah: job `lint`
+  (shellcheck v0.10.0 statis) + job `test` matriks `ubuntu:22.04`,
+  `ubuntu:24.04`, `debian:bookworm`; rilis pindah ke `release.yml` dengan job
+  `test` sebagai gate (`needs: test`) dan pemicu push tag `v*`. Sekaligus:
+  label dry-run `(upstream)` / `(lokal, upstream tidak terjangkau)`,
+  `--max-time 5`, hook `OSW_VERSION_URL`, dan 3 tes dry-run baru (67 tes,
+  67 lulus; shellcheck 0 warning; actionlint bersih).

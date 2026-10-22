@@ -8,7 +8,8 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 PROJECT="osw"
 UPSTREAM_REPO="${OSW_UPSTREAM_REPO:-Iky969/osw-wrapper-linux}"
-UPSTREAM_VERSION_URL="https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/VERSION"
+# OSW_VERSION_URL hanya untuk pengujian jalur offline/upstream.
+UPSTREAM_VERSION_URL="${OSW_VERSION_URL:-https://raw.githubusercontent.com/${UPSTREAM_REPO}/main/VERSION}"
 # Installer selalu diambil dari tag rilis (bukan main) supaya isi modul yang
 # dipasang sama dengan versi yang diumumkan.
 UPSTREAM_TAG_URL_TEMPLATE="https://raw.githubusercontent.com/${UPSTREAM_REPO}/v%s/install.sh"
@@ -396,7 +397,7 @@ do_self_update() {
     # tidak terjangkau, versi lokal dipakai dan dilabeli di pesan dry-run.
     local fetched_ver=""
     local upstream_ok=0
-    if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
+    if fetched_ver="$(curl -fsSL --max-time 5 "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
         target_ver="${fetched_ver#v}"
         upstream_ok=1
     fi
@@ -408,9 +409,9 @@ do_self_update() {
     # Dry-run tidak boleh mengunduh installer maupun membuat file sementara.
     if [[ "${OSW_DRY:-0}" == "1" ]]; then
         if [[ "$upstream_ok" == "1" ]]; then
-            _info "DRY: self-update dari ${target_url}"
+            _info "DRY: self-update dari ${target_url} (upstream)"
         else
-            _info "DRY: self-update dari ${target_url} — upstream tidak terjangkau, memakai versi lokal ${VERSION}"
+            _info "DRY: self-update dari ${target_url} (lokal, upstream tidak terjangkau)"
         fi
         return 0
     fi
