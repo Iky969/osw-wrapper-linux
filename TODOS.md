@@ -365,14 +365,23 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   dan jalur normal), `rm -f` tetap dijalankan di semua jalur, rc installer
   tetap diteruskan.
 - **`self-update` mengabaikan dry-run** — `bin/osw -n self-update` tetap
-  mengunduh dan menjalankan installer. Diperbaiki: `OSW_DRY=1` mencetak
-  `DRY: self-update dari <URL tag versi lokal>` lalu `return 0` sebelum ada
-  `curl` atau `mktemp`.
-- Regresi dijaga 3 tes baru di `tests/run.sh`: `_run mengembalikan rc & dry-run`,
-  `self-update dry-run tanpa network` (curl stub + proxy `127.0.0.1:9`, tidak
-  ada file sementara), dan `self-update mencabut RETURN trap` (memastikan
-  `trap -p RETURN` kosong dan `source` berikutnya tidak mematikan shell).
-  Dua tes terakhir **gagal** kalau dijalankan pada `bin/osw` versi sebelumnya
+  mengunduh dan menjalankan installer. Diperbaiki: `OSW_DRY=1` berhenti sebelum
+  `mktemp`/unduhan apa pun. Perilaku pesan (putusan review 2026-10-22):
+  versi upstream tetap dibaca lebih dulu (read-only, satu `curl` ke
+  `VERSION`) supaya URL target yang dicetak benar; kalau upstream tidak
+  terjangkau, versi lokal dipakai dan dilabeli
+  `DRY: self-update dari <URL> — upstream tidak terjangkau, memakai versi
+  lokal <VERSION>`. Kompromi yang disadari: pesan versi lokal yang
+  tidak dilabeli bisa menyesatkan kalau upstream sudah lebih baru, jadi
+  label fallback itu wajib ada.
+- Regresi dijaga 4 tes baru di `tests/run.sh`: `_run mengembalikan rc &
+  dry-run`, `self-update dry-run fallback versi lokal` (curl stub gagal +
+  proxy `127.0.0.1:9`: hanya `/main/VERSION` dibaca, installer tidak diunduh,
+  label fallback ada, tidak ada file sementara), `self-update dry-run pakai
+  versi upstream` (curl stub mengembalikan `9.9.9`: URL `v9.9.9` dicetak,
+  label fallback tidak ada), dan `self-update mencabut RETURN trap`
+  (`trap -p RETURN` kosong dan `source` berikutnya tidak mematikan shell).
+  Semua tes kecuali `_run` **gagal** kalau dijalankan pada `bin/osw` sebelumnya
   (diverifikasi dengan salinan repo berisi `bin/osw` dari `HEAD`).
 - Belum dirilis: `VERSION` sengaja tidak diubah di commit ini, jadi rilis
   berikutnya perlu menaikkan `VERSION` + `DEFAULT_VERSION` di `install.sh`.
@@ -395,8 +404,8 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ### 5. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 65 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
-  self-update, 3 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
+- `tests/run.sh` berisi 66 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+  self-update, 4 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
   11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, dan 5 tes rilis (checksum,
   `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
   tunggal mengunduh sumber, kelengkapan workflow).
@@ -441,3 +450,7 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 - `fix: _run, RETURN trap, dan dry-run self-update` — `bin/osw` (`_run`,
   `do_self_update`), 3 tes regresi baru di `tests/run.sh` (65 tes total,
   65 lulus; shellcheck 0 warning).
+- `fix(self-update): dry-run memakai versi upstream, fallback lokal berlabel` —
+  pembacaan `VERSION` upstream dipindah ke awal `do_self_update` dan dipakai
+  bersama oleh dry-run dan jalur unduh; pesan `DRY:` tidak lagi menampilkan
+  versi lokal tanpa keterangan (66 tes total, 66 lulus; shellcheck 0 warning).

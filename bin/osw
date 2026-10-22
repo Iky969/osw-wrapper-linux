@@ -391,22 +391,28 @@ do_detect() {
 do_self_update() {
     local target_ver="${VERSION#v}"
 
+    # Versi upstream dibaca lebih dulu (read-only, tanpa mengeksekusi apa pun)
+    # supaya dry-run juga menampilkan URL target yang benar. Kalau upstream
+    # tidak terjangkau, versi lokal dipakai dan dilabeli di pesan dry-run.
+    local fetched_ver=""
+    local upstream_ok=0
+    if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
+        target_ver="${fetched_ver#v}"
+        upstream_ok=1
+    fi
+
     local target_url
     # shellcheck disable=SC2059
     target_url="$(printf "$UPSTREAM_TAG_URL_TEMPLATE" "$target_ver")"
 
-    # Dry-run tidak boleh menyentuh network atau membuat file sementara sama
-    # sekali; URL dicetak dari versi lokal (tanpa mengambil VERSION upstream).
+    # Dry-run tidak boleh mengunduh installer maupun membuat file sementara.
     if [[ "${OSW_DRY:-0}" == "1" ]]; then
-        _info "DRY: self-update dari ${target_url}"
+        if [[ "$upstream_ok" == "1" ]]; then
+            _info "DRY: self-update dari ${target_url}"
+        else
+            _info "DRY: self-update dari ${target_url} — upstream tidak terjangkau, memakai versi lokal ${VERSION}"
+        fi
         return 0
-    fi
-
-    local fetched_ver=""
-    if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
-        target_ver="${fetched_ver#v}"
-        # shellcheck disable=SC2059
-        target_url="$(printf "$UPSTREAM_TAG_URL_TEMPLATE" "$target_ver")"
     fi
 
     _info "Mengunduh installer osw (v${target_ver}) dari ${target_url}..."

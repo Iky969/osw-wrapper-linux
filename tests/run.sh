@@ -447,9 +447,10 @@ if [[ -e "$MARKER" ]]; then printf "marker=ada\n"; else printf "marker=tidak-ada
     expect_out "marker=tidak-ada" || return 1
 }
 
-# Dry-run self-update: tidak ada traffic keluar (curl stub tidak pernah
-# dipanggil) dan tidak ada file sementara yang dibuat.
-test_self_update_dry_run_no_network() {
+# Dry-run self-update dengan upstream tidak terjangkau: hanya VERSION upstream
+# yang dibaca (read-only); installer tidak diunduh, tidak ada file sementara,
+# dan versi lokal dilabeli agar pesan tidak menyesatkan.
+test_self_update_dry_run_fallback_local_version() {
     prepare_debian_config
     mkdir -p "$SB/tmp" "$SB/curl-bin"
     {
@@ -470,8 +471,48 @@ test_self_update_dry_run_no_network() {
 
     expect_rc 0 || return 1
     expect_out "DRY: self-update dari https://raw.githubusercontent.com/Iky969/osw-wrapper-linux/v${TEST_VERSION}/install.sh" || return 1
-    if [[ -s "$SB/curl.log" ]]; then
-        _fail "dry-run memanggil curl: $(cat "$SB/curl.log")"
+    expect_out "upstream tidak terjangkau, memakai versi lokal ${TEST_VERSION}" || return 1
+    # Versi upstream boleh dibaca, tetapi installer tidak boleh diunduh.
+    expect_file_contains "$SB/curl.log" "/main/VERSION" || return 1
+    if grep -qF "/install.sh" "$SB/curl.log"; then
+        _fail "dry-run mengunduh installer: $(cat "$SB/curl.log")"
+        return 1
+    fi
+    if [[ -n "$(ls -A "$SB/tmp")" ]]; then
+        _fail "dry-run meninggalkan file sementara: $(ls -A "$SB/tmp")"
+        return 1
+    fi
+}
+
+# Dry-run harus memakai versi upstream (bukan versi lokal yang sudah usang)
+# selama VERSION upstream bisa dijangkau.
+test_self_update_dry_run_uses_upstream_version() {
+    prepare_debian_config
+    mkdir -p "$SB/tmp" "$SB/curl-bin"
+    {
+        printf '#!/usr/bin/env bash\n'
+        printf 'printf "%%s\\n" "$*" >>"%s"\n' "$SB/curl.log"
+        printf 'case "$*" in\n'
+        printf '  */VERSION) printf "9.9.9\\n" ;;\n'
+        printf '  *) exit 22 ;;\n'
+        printf 'esac\n'
+    } >"$SB/curl-bin/curl"
+    chmod +x "$SB/curl-bin/curl"
+    : >"$SB/curl.log"
+
+    OSW_TEST_PATH="$SB/curl-bin:$TEST_PATH" \
+        _sandbox_env \
+        TMPDIR="$SB/tmp" \
+        https_proxy="http://127.0.0.1:9" \
+        http_proxy="http://127.0.0.1:9" \
+        bash "$OSW" -n self-update >"$OUT" 2>"$ERR"
+    RC=$?
+
+    expect_rc 0 || return 1
+    expect_out "DRY: self-update dari https://raw.githubusercontent.com/Iky969/osw-wrapper-linux/v9.9.9/install.sh" || return 1
+    expect_out_not "memakai versi lokal" || return 1
+    if grep -qF "/install.sh" "$SB/curl.log"; then
+        _fail "dry-run mengunduh installer: $(cat "$SB/curl.log")"
         return 1
     fi
     if [[ -n "$(ls -A "$SB/tmp")" ]]; then
@@ -1207,7 +1248,8 @@ run_test "files tanpa argumen"               test_files_without_args
 run_test "list opsi tidak dikenal"           test_list_invalid_option
 run_test "self-update gagal tanpa network"   test_self_update_fails_cleanly_without_network
 run_test "_run mengembalikan rc & dry-run"   test_run_returns_status
-run_test "self-update dry-run tanpa network"  test_self_update_dry_run_no_network
+run_test "self-update dry-run fallback versi lokal" test_self_update_dry_run_fallback_local_version
+run_test "self-update dry-run pakai versi upstream" test_self_update_dry_run_uses_upstream_version
 run_test "self-update mencabut RETURN trap"   test_self_update_clears_return_trap
 
 printf -- '\n--- Fase 3: install.sh ---\n'
