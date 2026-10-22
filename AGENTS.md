@@ -22,6 +22,10 @@ Aturan tetap untuk siapa pun (manusia atau agen) yang mengubah repo ini.
    bug. Bug yang diperbaiki di luar fase harus disebut eksplisit di pesan commit.
 5. Jangan memperbaiki bug yang belum terbukti: verifikasi dulu (tes atau reproduksi
    minimal), baru ubah kode.
+6. Setiap commit `fix` atau `feat` **wajib** menambahkan satu baris
+   `[NOTICE] update <versi> <ringkasan>` ke `CHANGELOG.md` (entri terbaru di
+   paling atas). Versi yang dipakai adalah versi tujuan rilis berikutnya. Commit
+   tanpa entri changelog dianggap belum selesai.
 
 ## Verifikasi wajib setelah mengubah kode
 

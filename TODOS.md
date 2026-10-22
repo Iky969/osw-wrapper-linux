@@ -433,6 +433,16 @@ Catatan proses: pembuatan run/job Actions di repo ini kadang tertunda
 belasan menit (run tetap muncul dan sukses); tag bisa diperiksa langsung
 dengan `git ls-remote --tags` tanpa menunggu API.
 
+## Backlog v0.2
+
+### `osw changelog` (alias `osw notice`)
+
+- Menampilkan baris dari `CHANGELOG.md` terbaru, dengan opsi jumlah baris
+  (mis. `osw changelog 5`).
+- Catatan desain: `osw` berjalan dari salinan terpasang, bukan dari repo, jadi
+  `CHANGELOG.md` harus ikut dipasang oleh `install.sh` (mis. ke `$DATA_DIR`)
+  atau diambil dari rilis. **Belum dikerjakan** di v0.1.5.
+
 ## Item terbuka
 
 ### 1. BUG (Fase 1): `osw self-update` selalu gagal — TERVERIFIKASI & SUDAH DIPERBAIKI
