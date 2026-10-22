@@ -485,7 +485,8 @@ dengan `git ls-remote --tags` tanpa menunggu API.
 
 ## Detail Fase 10 — Fedora (dnf)
 
-Status 2026-10-22: modul + tes + CI selesai, menunggu rilis 0.1.6.
+Status 2026-10-22: **selesai** — modul, tes, CI, tag `v0.1.6`, dan Release
+terverifikasi.
 
 ### Deteksi
 
@@ -568,11 +569,44 @@ Status 2026-10-22: modul + tes + CI selesai, menunggu rilis 0.1.6.
   package manager nyata yang dijalankan.
 - Dengan `os/fedora.sh` dihapus: **10 gagal** (6 tes fedora + kontrak modul +
   smoke + deteksi + checksum). Setelah modul ada: **79 lulus, 0 gagal**.
-- **Belum diuji**: `dnf`/`dnf5` asli, perilaku `--assumeno` yang sebenarnya,
-  dan konsistensi output `repoquery --unneeded` — lingkungan ini (Ubuntu
-  22.04) tidak punya dnf maupun runtime container Fedora. Flag dicatat dari
-  dokumentasi resmi DNF4/DNF5 dan harus diverifikasi di container
-  `fedora:latest`.
+- **Belum diuji**: `dnf`/`dnf5` asli untuk aksi paket nyata, perilaku
+  `--assumeno` yang sebenarnya, dan konsistensi output
+  `repoquery --unneeded` — lingkungan pengembangan ini (Ubuntu 22.04) tidak
+  punya dnf maupun runtime container Fedora. Yang **sudah** berjalan: tes
+  hermetik di container `fedora:latest` (stub, bukan dnf asli) pada job CI dan
+  job gate rilis. Flag dicatat dari dokumentasi resmi DNF4/DNF5.
+
+### Rilis 0.1.6
+
+- Commit 0.1.6: `feat(fedora)` `bd670c6`, `ci: fedora` `84358a6`,
+  `docs: changelog fedora` `0b5f58f`, `chore(release): v0.1.6` `12787af`,
+  `test(fedora): perbaiki tes` `04de11d`.
+- CI `12787af` (run
+  https://github.com/Iky969/osw-wrapper-linux/actions/runs/39870893747)
+  **gagal** di job `fedora:latest` karena dua tes mengasumsikan host non-Fedora
+  (lihat bagian CI); job `Lint` + 3 container Debian/Ubuntu hijau.
+- CI `04de11d` (run
+  https://github.com/Iky969/osw-wrapper-linux/actions/runs/39871195794)
+  **hijau**: `Lint` + `Tes (ubuntu:22.04)`, `(ubuntu:24.04)`,
+  `(debian:bookworm)`, `(fedora:latest)` — semuanya success, 80 tes lulus di
+  Fedora.
+- Sesuai aturan tag di `AGENTS.md`, `v0.1.6` dipasang di `04de11d` — bukan di
+  `12787af` — karena commit versi itu CI-nya merah. `04de11d` membawa
+  `VERSION`/`DEFAULT_VERSION` 0.1.6, CI hijau pada SHA itu, dan kedua baris
+  `[NOTICE] update 0.1.6`; tag tidak dipindahkan/ditimpa.
+- Release run (event tag `v0.1.6`):
+  https://github.com/Iky969/osw-wrapper-linux/actions/runs/39871360354 —
+  gate `Tes sebelum rilis` (ubuntu 22.04/24.04, debian bookworm, **fedora
+  latest**) success semua; job `Tag & rilis otomatis` success pada langkah
+  `Checkout pada commit tag`, `Validasi tag dan VERSION`,
+  `Verifikasi checksum installer`, `Terbitkan GitHub Release dari tag`.
+- Release https://github.com/Iky969/osw-wrapper-linux/releases/tag/v0.1.6
+  terbit (bukan draft/prerelease) dengan aset `install.sh` (16.879 byte) dan
+  `install.sh.sha256` (77 byte); unduhan ulang → `sha256sum -c` OK,
+  `DEFAULT_VERSION="0.1.6"`.
+- Self-update 0.1.5 → 0.1.6 di sandbox (HOME/XDG terisolasi): instal 0.1.5 dari
+  aset tag `v0.1.5`, `osw -y self-update`, hasil `osw 0.1.6 (OS=debian)`,
+  `VERSION=0.1.6` di config, dan `os/fedora.sh` ikut terpasang.
 
 ## Backlog v0.2
 
@@ -711,6 +745,9 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `chore: catat hasil rilis v0.1.6` — bukti CI (`39871195794`), Release
+  (`39871360354`), aset + checksum, dan self-update 0.1.5 → 0.1.6 dicatat di
+  `TODOS.md` setelah run benar-benar selesai; tag `v0.1.6` di `04de11d`.
 - `test(fedora): perbaiki tes yang bergantung host Fedora` — CI `fedora:latest`
   run `39870893747` gagal di `detect menulis config` (regex family belum
   memuat `fedora`) dan `fedora fallback ke dnf4` (`dnf5` asli host menang atas
