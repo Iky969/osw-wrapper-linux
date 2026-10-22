@@ -9,7 +9,7 @@ set -euo pipefail
 
 PROJECT="osw"
 UPSTREAM_REPO="${OSW_UPSTREAM_REPO:-Iky969/osw-wrapper-linux}"
-DEFAULT_VERSION="0.1.2"
+DEFAULT_VERSION="0.1.3"
 # Ref sumber untuk mode pipe. Default-nya tag rilis yang cocok dengan
 # DEFAULT_VERSION, supaya modul yang dipasang sama persis dengan installer
 # yang dipiping. Set OSW_UPSTREAM_REF=main untuk mencoba kode pengembangan.

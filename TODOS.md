@@ -268,6 +268,10 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
   `multitool.lock.json` Selenium 4.40.0
   (`https://chromium.googlesource.com/external/github.com/SeleniumHQ/selenium/+/refs/tags/selenium-4.40.0/multitool.lock.json`).
   `release.yml` tidak punya job lint, jadi hanya satu pekerjaan yang berubah.
+  Terverifikasi di GitHub: run CI `deb80f9`
+  (`https://github.com/Iky969/osw-wrapper-linux/actions/runs/39853639585`)
+  job `Lint (bash -n & shellcheck)` hijau dan langkah
+  `ShellCheck 0.10.0 (binary statis)` berstatus success.
 - `install.sh.sha256` di-commit di root repo supaya tag pertama langsung
   punya checksum dan `osw self-update` tidak pernah melihat tag tanpa
   `.sha256`.
@@ -438,6 +442,11 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   saat rilis, sehingga `osw version`/`osw status` bisa melaporkan versi yang
   salah. Belum diperbaiki; perlu sumber versi yang ditanam saat rilis atau
   dibaca dari `os.conf`.
+- Per rilis 0.1.3: fallback ini **bukan** sumber mismatch kontrak
+  `VERSION` == `DEFAULT_VERSION`. Kontrak itu dibaca dari file `VERSION` di
+  root repo (0.1.3) dan `DEFAULT_VERSION` di `install.sh` (0.1.3); fallback
+  hanya aktif kalau file `VERSION` tidak ada di sebelah binary (instalasi file
+  tunggal), dan itu tetap item terbuka, bukan diubah di commit rilis.
 
 ### 4. Deteksi OS terduplikasi (terbuka)
 
@@ -506,6 +515,13 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 - `chore: catat hasil run CI hijau` — `TODOS.md`: status "hijau di GitHub"
   ditandai setelah run `5a426d1` benar-benar selesai (CI + Release), termasuk
   dua tautan run dan catatan job rilis yang di-skip karena tag sudah ada.
+- `ci: verifikasi SHA-256 tarball shellcheck v0.10.0` — langkah shellcheck di
+  `ci.yml` memverifikasi hash sebelum ekstraksi; sumber checksum dicatat di
+  TODOS (upstream v0.10.0 tidak menerbitkan file checksum). Run `deb80f9`
+  hijau: Lint + 3 container.
+- `chore(release): v0.1.3` — `VERSION` dan `DEFAULT_VERSION` menjadi 0.1.3,
+  `install.sh.sha256` dihitung ulang, item fallback `bin/osw` dicatat sebagai
+  terbuka (bukan sumber mismatch). Tes 67 lulus, 0 gagal.
 - `ci: tambahkan workflow test dan gate rilis` — `ci.yml` dipecah: job `lint`
   (shellcheck v0.10.0 statis) + job `test` matriks `ubuntu:22.04`,
   `ubuntu:24.04`, `debian:bookworm`; rilis pindah ke `release.yml` dengan job
