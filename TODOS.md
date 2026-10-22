@@ -270,6 +270,15 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
     dibutuhkan hanya untuk membuat Release.
   - Konsekuensi: pada push ke `main` hanya `ci.yml` yang berjalan (matriks tes
     tidak lagi berjalan dua kali).
+- **Aturan pemasangan tag** (2026-10-22, dicatat di `AGENTS.md`): tag
+  `v<versi>` hanya boleh dibuat pada commit yang (a) membawa `VERSION` dan
+  `DEFAULT_VERSION` sama dengan tag, (b) CI-nya hijau pada commit itu, dan
+  (c) memuat semua baris `[NOTICE] update <versi>` untuk versi tersebut.
+  Dilarang memasang tag di commit yang versinya naik tetapi perbaikannya belum
+  masuk (perbaiki urutan commit, bukan tagnya) dan dilarang memindahkan atau
+  menimpa tag yang sudah ada. `release.yml` hanya memeriksa (a) secara
+  otomatis (plus checksum); (b) dan (c) tetap bergantung pada disiplin pemasang
+  tag.
 - **Verifikasi checksum shellcheck** (2026-10-22): langkah `ShellCheck 0.10.0`
   di `ci.yml` menjalankan `printf '%s  %s\n' "$SHELLCHECK_SHA256" /tmp/shellcheck.tar.xz | sha256sum -c -`
   sebelum ekstraksi, jadi hash yang tidak cocok menggagalkan job. Nilai yang
@@ -611,6 +620,13 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `docs: tegaskan aturan pemasangan tag rilis di AGENTS.md` — bagian baru
+  "Rilis: pemasangan tag" di `AGENTS.md`: tag hanya pada commit yang membawa
+  `VERSION`/`DEFAULT_VERSION` sesuai tag, CI hijau pada commit itu, dan seluruh
+  baris `[NOTICE] update <versi>` untuk versi tersebut; plus larangan memasang
+  tag di commit versi-naik-tanpa-perbaikan (perbaiki urutan commit) dan
+  larangan memindahkan/menimpa tag yang sudah ada. Tanpa perubahan kode,
+  workflow, atau `CHANGELOG.md`; `bash tests/run.sh` tetap 73 lulus, 0 gagal.
 - `docs: tambah CHANGELOG.md dan aturan pencatatan di AGENTS.md` —
   `CHANGELOG.md` (10 baris `[NOTICE]`, 0.1.0-0.1.5), aturan wajib changelog di
   `AGENTS.md`, dan backlog v0.2 `osw changelog` di `TODOS.md`. Tag `v0.1.5`

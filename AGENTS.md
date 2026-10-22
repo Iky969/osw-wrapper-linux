@@ -27,6 +27,29 @@ Aturan tetap untuk siapa pun (manusia atau agen) yang mengubah repo ini.
    paling atas). Versi yang dipakai adalah versi tujuan rilis berikutnya. Commit
    tanpa entri changelog dianggap belum selesai.
 
+## Rilis: pemasangan tag
+
+Tag rilis `v<versi>` hanya boleh dibuat pada commit yang memenuhi **ketiganya**:
+
+1. Membawa `VERSION` **dan** `DEFAULT_VERSION` di `install.sh` yang sama dengan
+   tag (mis. tag `v0.1.5` → `VERSION` 0.1.5 dan `DEFAULT_VERSION="0.1.5"`).
+2. CI-nya hijau **pada commit itu** (run `CI` untuk SHA tersebut, bukan commit
+   lain di sekitarnya). Kalau gagal karena infrastruktur, jalankan ulang CI di
+   commit yang sama sampai hijau.
+3. Pohon commit itu memuat **semua** baris `[NOTICE] update <versi>` yang
+   berkaitan dengan versi tersebut di `CHANGELOG.md` — tidak boleh ada
+   perbaikan versi itu yang baru masuk di commit setelahnya.
+
+Larangan:
+
+- **Jangan** memasang tag di commit yang versinya sudah naik tetapi perbaikannya
+  belum masuk (commit versi mendahului commit perbaikan). Kalau urutan commit
+  terbalik, perbaiki urutannya dulu — tag bukan alat untuk menambal urutan yang
+  salah.
+- **Jangan** memindahkan atau menimpa tag yang sudah ada (`git tag -f`,
+  `git push --force` tag, menghapus lalu membuat ulang tag yang sama). Tag yang
+  sudah terbit bersifat tetap; kalau isinya salah, terbitkan versi baru.
+
 ## Verifikasi wajib setelah mengubah kode
 
 ```sh
