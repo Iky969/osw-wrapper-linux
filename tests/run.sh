@@ -1197,14 +1197,22 @@ test_release_workflow_present() {
         _fail "workflow .github/workflows/release.yml tidak ada"
         return 1
     fi
-    expect_file_contains "$wf" "sha256sum install.sh > install.sh.sha256" || return 1
+    # Model B: rilis hanya dari push tag, tag tidak dibuat workflow, dan
+    # checksum installer diverifikasi (bukan ditulis ulang) sebelum Release.
+    expect_file_contains "$wf" "sha256sum -c install.sh.sha256" || return 1
     expect_file_contains "$wf" "gh release create" || return 1
-    expect_file_contains "$wf" "--target" || return 1
+    expect_file_contains "$wf" "--verify-tag" || return 1
     expect_file_contains "$wf" "bash tests/run.sh" || return 1
-    # Gate rilis: job rilis harus butuh job test, dan push tag harus tetap
-    # memicu workflow ini.
     expect_file_contains "$wf" "needs: test" || return 1
     expect_file_contains "$wf" "tags: ['v*']" || return 1
+    if grep -qF -- "--target" "$wf"; then
+        _fail "release.yml masih membuat tag lewat --target (model B melarang)"
+        return 1
+    fi
+    if grep -qE '^\s+branches: \[main\]' "$wf"; then
+        _fail "release.yml masih dipicu push main (model B hanya push tag)"
+        return 1
+    fi
     expect_file_contains "$ci" "bash tests/run.sh" || return 1
     expect_file_contains "$ci" "shellcheck" || return 1
     expect_file_contains "$ROOT_DIR/install.sh" 'ref_path="tags/' || return 1

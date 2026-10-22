@@ -1,10 +1,10 @@
 name: Release
 
+# Model B: rilis hanya dipicu push tag `v*`. Workflow ini tidak berjalan pada
+# push ke `main`, tidak membuat tag, dan tidak mendorong commit apa pun.
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,9 +14,7 @@ defaults:
     shell: bash
 
 jobs:
-  # Gate rilis: job `release` hanya jalan kalau tes ini hijau. Tes diulang di
-  # sini (bukan hanya di ci.yml) karena workflow ini juga dipicu langsung oleh
-  # push tag, dan jalur itu harus tetap tergerbang.
+  # Gate rilis: job `release` hanya jalan kalau tes ini hijau.
   test:
     name: Tes sebelum rilis (${{ matrix.container }})
     runs-on: ubuntu-latest
@@ -52,16 +50,23 @@ jobs:
       group: release
       cancel-in-progress: false
     steps:
-      - name: Checkout (lengkap, butuh tag)
+      - name: Checkout pada commit tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Baca dan validasi VERSION
+      - name: Validasi tag dan VERSION
         id: version
         run: |
           set -euo pipefail
 
+          # Model B: satu-satunya pemicu rilis adalah push tag `v*`.
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "Rilis hanya dari push tag v*; ref sekarang: $GITHUB_REF" >&2
+            exit 1
+          fi
+
+          tag="${GITHUB_REF#refs/tags/}"
           version="$(tr -d '[:space:]' < VERSION)"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "VERSION tidak valid: '$version' (harus X.Y.Z)" >&2
@@ -71,52 +76,33 @@ jobs:
           default_version="$(sed -n 's/^DEFAULT_VERSION="\([^"]*\)"$/\1/p' install.sh | head -n1)"
           if [[ "$default_version" != "$version" ]]; then
             echo "DEFAULT_VERSION di install.sh ($default_version) != VERSION ($version)." >&2
-            echo "Samakan keduanya sebelum merge ke main." >&2
+            echo "Samakan keduanya di commit yang diberi tag." >&2
             exit 1
           fi
 
-          # Kalau dipicu push tag, tag harus menunjuk versi yang sama.
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            if [[ "${GITHUB_REF#refs/tags/}" != "v$version" ]]; then
-              echo "Tag ${GITHUB_REF#refs/tags/} tidak cocok dengan VERSION ($version)." >&2
-              exit 1
-            fi
+          # Tag yang di-push harus menunjuk versi yang sama dengan isi commit-nya.
+          if [[ "$tag" != "v$version" ]]; then
+            echo "Tag $tag tidak cocok dengan VERSION ($version); tag harus v$version." >&2
+            exit 1
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "Versi rilis: v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Tag $tag cocok dengan VERSION $version."
 
-      - name: Cek apakah tag sudah ada
-        id: tag
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG sudah ada; tag baru tidak dibuat."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG belum ada; akan dibuat."
-          fi
-
-      - name: Pastikan checksum tag lama masih cocok
-        if: steps.tag.outputs.exists == 'true'
+      - name: Verifikasi checksum installer
         run: |
           set -euo pipefail
           if [[ ! -f install.sh.sha256 ]]; then
-            echo "install.sh.sha256 tidak ada padahal tag sudah terbit." >&2
+            echo "install.sh.sha256 tidak ada di commit tag." >&2
             exit 1
           fi
           if ! sha256sum -c install.sh.sha256; then
-            echo "install.sh berubah tanpa kenaikan VERSION." >&2
-            echo "Naikkan VERSION (dan DEFAULT_VERSION di install.sh) untuk rilis baru." >&2
+            echo "install.sh.sha256 tidak cocok dengan install.sh di commit tag." >&2
             exit 1
           fi
 
-      - name: Pastikan Release untuk tag yang sudah ada
-        if: steps.tag.outputs.exists == 'true'
+      - name: Terbitkan GitHub Release dari tag
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -127,50 +113,10 @@ jobs:
             echo "Release $TAG sudah ada; tidak ada yang perlu dibuat."
             exit 0
           fi
-          # Tag sudah terbit: jangan pindahkan tag, cukup lampirkan asetnya.
+          # `--verify-tag` memakai tag yang sudah di-push dan tidak membuat
+          # atau memindahkan ref apa pun. Aset diambil dari commit tag.
           gh release create "$TAG" --verify-tag \
             --title "osw $VERSION" \
             --generate-notes \
             install.sh install.sh.sha256
-          echo "Rilis $TAG terbit dari tag yang sudah ada."
-
-      - name: Buat tag dan GitHub Release
-        if: steps.tag.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Checksum wajib ada di dalam tag: osw self-update menolak installer
-          # yang file .sha256-nya tidak tersedia atau tidak cocok.
-          sha256sum install.sh > install.sh.sha256
-          git add install.sh.sha256
-          if git diff --cached --quiet; then
-            echo "install.sh.sha256 sudah sesuai."
-          else
-            git commit -m "chore: checksum installer v$VERSION [skip ci]"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
-
-          # Tag dibuat lewat API (gh release create), bukan `git push refs/tags`:
-          # GITHUB_TOKEN adalah GitHub App tanpa izin `workflows`, sehingga push
-          # tag yang commit-nya memuat .github/workflows akan ditolak dengan
-          # "refusing to allow a GitHub App to create or update workflow".
-          # Commit sudah ada di main, jadi membuat ref lewat API aman.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG sudah ada; tidak ada yang perlu dibuat."
-            exit 0
-          fi
-
-          gh release create "$TAG" \
-            --target "$(git rev-parse HEAD)" \
-            --title "osw $VERSION" \
-            --generate-notes \
-            install.sh install.sh.sha256
-
           echo "Rilis $TAG terbit."

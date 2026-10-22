@@ -246,60 +246,62 @@ otomatis; lihat `docs/ADDING-OS.md`.
 
 ## Rilis otomatis (CI)
 
-`.github/workflows/ci.yml` punya dua job:
+Model rilis: **tag-driven (model B)**. Rilis hanya dipicu push tag
+`v<VERSION>`; workflow rilis tidak berjalan pada push ke `main`, tidak membuat
+tag, dan tidak mendorong commit apa pun.
 
-1. **Tes hermetik** — `bash -n`, `shellcheck -S warning`, `tests/run.sh`,
-   `tests/smoke.sh --stub`, `tests/contract.sh` pada setiap push ke `main` dan
-   setiap pull request.
-2. **Tag & rilis otomatis** — hanya pada push ke `main` (atau
-   `workflow_dispatch`), setelah job tes hijau. Langkahnya:
-   - memvalidasi `VERSION` berbentuk `X.Y.Z`;
-   - menolak rilis kalau `DEFAULT_VERSION` di `install.sh` ≠ `VERSION`;
-   - kalau tag `v<VERSION>` belum ada: menulis `install.sh.sha256`,
-     meng-commit-nya (`chore: checksum installer v<VERSION> [skip ci]`), lalu
-     menerbitkan GitHub Release yang sekaligus membuat tag `v<VERSION>`
-     (aset: `install.sh` + `install.sh.sha256`);
-   - kalau tag sudah ada: memastikan checksum yang di-commit masih cocok, dan
-     gagal dengan pesan "naikkan VERSION" kalau `install.sh` berubah tanpa
-     kenaikan versi.
+`.github/workflows/ci.yml` — pada setiap push ke `main` dan pull request:
 
-Jadi cara merilis versi baru cukup:
+1. **Lint** — `bash -n` dan shellcheck v0.10.0; tarball shellcheck diverifikasi
+   SHA-256 sebelum ekstraksi.
+2. **Tes** — matriks container `ubuntu:22.04`, `ubuntu:24.04`,
+   `debian:bookworm`, menjalankan `tests/run.sh` (hermetik).
+
+`.github/workflows/release.yml` — hanya pada push tag `v*`, dengan job `test`
+(matrisk sama) sebagai gate `needs: test`:
+
+- menolak ref selain tag, dan menolak kalau nama tag ≠ `v$VERSION`;
+- menolak kalau `VERSION` bukan `X.Y.Z` atau `DEFAULT_VERSION` di `install.sh`
+  ≠ `VERSION`;
+- memverifikasi `install.sh.sha256` terhadap `install.sh` di commit tag, dan
+  gagal kalau tidak cocok;
+- menerbitkan GitHub Release untuk tag tersebut dengan `--verify-tag` (aset:
+  `install.sh` + `install.sh.sha256`), atau melewatinya kalau Release sudah
+  ada.
+
+Cara merilis versi baru:
 
 ```sh
-# 1. Naikkan versi di DUA tempat (harus sama)
+# 1. Naikkan versi di dua tempat (harus sama) dan hitung checksum
 printf '0.2.0\n' > VERSION
-# ubah DEFAULT_VERSION="0.1.0" -> "0.2.0" di install.sh
+# ubah DEFAULT_VERSION="0.1.4" -> "0.2.0" di install.sh
+sha256sum install.sh > install.sh.sha256
 
-# 2. Perbarui TODOS.md, commit, lalu push ke main
-git add -A
-git commit -m "chore: rilis v0.2.0"
+# 2. Commit dan push ke main
+git add VERSION install.sh install.sh.sha256 TODOS.md
+git commit -m "chore(release): v0.2.0"
 git push origin main
+
+# 3. Tunggu CI hijau pada commit itu, baru buat dan push tag
+git tag v0.2.0 <commit-yang-hijau>
+git push origin v0.2.0
 ```
 
-CI yang membuat tag, checksum, dan Release. Selama tag belum terbit,
-`install.sh` versi baru tetap bisa dipakai lewat clone repo; mode pipe akan
-memberi tahu bahwa tag `v<versi>` belum ada lalu memakai `main`.
+Aturan penting: **tag tidak boleh menunjuk commit yang belum lulus CI**.
+Push tag memicu `release.yml`; kalau gate tes atau validasi gagal, Release
+tidak terbit. Selama tag belum terbit, `install.sh` versi baru tetap bisa
+dipakai lewat clone repo; mode pipe akan memberi tahu bahwa tag `v<versi>`
+belum ada lalu memakai `main`.
 
 Catatan:
 
-- Job rilis butuh `permissions: contents: write`. Kalau branch `main` diproteksi,
-  izinkan GitHub Actions (atau bot) untuk push commit checksum, atau jalankan
-  workflow secara manual dari tab Actions (`workflow_dispatch`).
-- Tag dibuat lewat GitHub Release API, bukan `git push refs/tags`. Alasannya:
-  `GITHUB_TOKEN` adalah GitHub App tanpa izin `workflows`, sehingga push tag
-  yang commit-nya memuat `.github/workflows/` ditolak dengan pesan
-  `refusing to allow a GitHub App to create or update workflow`. Membuat ref
-  lewat API tidak terkena batasan itu karena commit-nya sudah ada di `main`.
-- Rilis manual (tanpa CI) tetap mungkin, tetapi urutannya wajib: checksum
-  di-commit **sebelum** tag dibuat.
-
-  ```sh
-  sha256sum install.sh > install.sh.sha256
-  git add install.sh.sha256
-  git commit -m "chore: checksum installer v$(cat VERSION)"
-  git tag -a "v$(cat VERSION)" -m "osw v$(cat VERSION)"
-  git push origin main "v$(cat VERSION)"
-  ```
+- Tag dibuat manusia (`git tag`/`git push`), bukan CI. Job rilis hanya memakai
+  tag yang sudah ada (`gh release create --verify-tag`), jadi tidak ada izin
+  `workflows` yang dibutuhkan dan tag tidak pernah dipindahkan.
+- `install.sh.sha256` harus sudah benar di commit yang diberi tag; kalau tidak,
+  job rilis berhenti sebelum menerbitkan Release.
+- Kalau Release perlu dibuat ulang, jalankan ulang job dari tab Actions pada run
+  tag yang sama; tidak perlu membuat tag baru.
 
 ## Pemecahan masalah
 

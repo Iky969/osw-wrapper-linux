@@ -238,22 +238,24 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
     memasang `ca-certificates coreutils curl git tar xz-utils` (git wajib
     untuk `actions/checkout`) lalu menjalankan `bash tests/run.sh`.
   - Tidak ada container Void/Alpine/Gentoo di job ini (fase terpisah).
-- `.github/workflows/release.yml` (job rilis dipindah dari `ci.yml`):
-  - pemicu `push` branch `main`, `push` tag `v*`, dan `workflow_dispatch`.
+- `.github/workflows/release.yml` — **model rilis B (tag-driven), 2026-10-22**:
+  - pemicu **hanya** `push` tag `v*`. `push` ke `main` dan `workflow_dispatch`
+    dihapus: dispatch tidak pernah dipakai (tidak ada run ber-event
+    `workflow_dispatch`, dan token terkelola tidak punya `actions: write`),
+    dan run tag yang gagal bisa dijalankan ulang dari tab Actions.
   - job `test` (matriks sama dengan `ci.yml`) lalu job `release` dengan
-    `needs: test` — rilis hanya terbit kalau tes hijau, termasuk saat dipicu
-    push tag. Konsekuensi pilihan gate (b): pada push ke `main` matriks tes
-    berjalan dua kali (`ci.yml` dan `release.yml`).
-  - validasi `VERSION` (`X.Y.Z`) + `DEFAULT_VERSION`; pada push tag, nama tag
-    harus sama dengan `v$VERSION`.
-  - tag belum ada: tulis `install.sh.sha256`, commit `[skip ci]` bila berubah,
-    lalu `gh release create --target <sha>` dengan aset `install.sh` +
-    `install.sh.sha256`.
-  - tag sudah ada: verifikasi checksum terhadap isi tag, dan buat Release
-    untuk tag itu kalau belum ada (`--verify-tag`, tag tidak dipindah).
-  - Perlu `permissions: contents: write` pada job rilis; branch protection
-    harus mengizinkan bot Actions push commit checksum, atau jalankan manual
-    lewat `workflow_dispatch`.
+    `needs: test` — rilis hanya terbit kalau tes gate hijau.
+  - job rilis menolak ref selain tag, menolak tag yang bukan `v$VERSION`, dan
+    menolak `DEFAULT_VERSION` ≠ `VERSION`.
+  - memverifikasi `install.sh.sha256` terhadap `install.sh` di commit tag
+    (gagal kalau tidak cocok).
+  - menerbitkan Release dengan `gh release create --verify-tag` (aset
+    `install.sh` + `install.sh.sha256`) atau melewatinya kalau sudah ada.
+  - **Tidak** membuat tag, **tidak** `--target`, **tidak** commit/push apa pun;
+    tag dibuat manusia setelah CI hijau. `permissions: contents: write` tetap
+    dibutuhkan hanya untuk membuat Release.
+  - Konsekuensi: pada push ke `main` hanya `ci.yml` yang berjalan (matriks tes
+    tidak lagi berjalan dua kali).
 - **Verifikasi checksum shellcheck** (2026-10-22): langkah `ShellCheck 0.10.0`
   di `ci.yml` menjalankan `printf '%s  %s\n' "$SHELLCHECK_SHA256" /tmp/shellcheck.tar.xz | sha256sum -c -`
   sebelum ekstraksi, jadi hash yang tidak cocok menggagalkan job. Nilai yang
@@ -546,6 +548,11 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 - `chore(release): v0.1.3` — `VERSION` dan `DEFAULT_VERSION` menjadi 0.1.3,
   `install.sh.sha256` dihitung ulang, item fallback `bin/osw` dicatat sebagai
   terbuka (bukan sumber mismatch). Tes 67 lulus, 0 gagal.
+- `ci(release): rilis hanya dari push tag v*` — model B: `release.yml` hanya
+  dipicu `push` tag `v*`, gate `needs: test`, validasi tag == `v$VERSION`,
+  verifikasi `install.sh.sha256`, dan `gh release create --verify-tag`; tidak
+  lagi membuat tag, `--target`, atau commit/push. README + TODOS menjelaskan
+  urutan rilis baru; tes kelengkapan workflow disesuaikan.
 - `ci: tambahkan workflow test dan gate rilis` — `ci.yml` dipecah: job `lint`
   (shellcheck v0.10.0 statis) + job `test` matriks `ubuntu:22.04`,
   `ubuntu:24.04`, `debian:bookworm`; rilis pindah ke `release.yml` dengan job
