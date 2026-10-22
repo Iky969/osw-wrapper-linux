@@ -172,6 +172,72 @@ installer_pipe_run() {
     return 0
 }
 
+# Installer file tunggal (mode pipe) dengan stub curl: tidak menyentuh network.
+# Argumen: <status tag> <status main> <mktemp gagal 0|1> [TMPDIR].
+# Semua URL dicatat ke $SB/curl.log supaya tes bisa memastikan main tidak
+# pernah dicoba. Status "gagal" meniru curl yang tidak bisa terhubung (exit 7).
+installer_run_pipe_stub() {
+    local tag_status="${1:-404}"
+    local main_status="${2:-500}"
+    local fail_mktemp="${3:-0}"
+    local tmpdir="${4:-}"
+    local lone="$SB/lone"
+    local stub="$SB/stub"
+
+    mkdir -p "$lone" "$stub"
+    cp "$INSTALLER" "$lone/install.sh"
+
+    cat >"$stub/curl" <<'STUB'
+#!/usr/bin/env bash
+url=""
+out=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o) out="$2"; shift 2 ;;
+        -w | --max-time) shift 2 ;;
+        -*) shift ;;
+        *) url="$1"; shift ;;
+    esac
+done
+printf '%s\n' "$url" >>"$CURL_LOG"
+case "$url" in
+    */tags/*) status="$CURL_TAG_STATUS" ;;
+    */heads/*) status="$CURL_MAIN_STATUS" ;;
+    *) status=500 ;;
+esac
+if [[ "$status" == "gagal" ]]; then
+    printf 'curl: (7) gagal terhubung\n' >&2
+    exit 7
+fi
+if [[ -n "$out" ]]; then
+    : >"$out"
+fi
+printf '%s' "$status"
+STUB
+    chmod +x "$stub/curl"
+
+    if [[ "$fail_mktemp" == "1" ]]; then
+        printf '#!/usr/bin/env bash\nexit 1\n' >"$stub/mktemp"
+        chmod +x "$stub/mktemp"
+    fi
+
+    : >"$SB/curl.log"
+    env \
+        -u OSW_YES -u OSW_DRY -u OSW_QUIET -u OSW_DEBUG -u OSW_NO_COLOR \
+        HOME="$SB/home" \
+        XDG_CONFIG_HOME="$SB/cfg" \
+        XDG_DATA_HOME="$SB/data" \
+        XDG_BIN_HOME="$SB/bin" \
+        PATH="$stub:$TEST_PATH" \
+        TMPDIR="$tmpdir" \
+        CURL_LOG="$SB/curl.log" \
+        CURL_TAG_STATUS="$tag_status" \
+        CURL_MAIN_STATUS="$main_status" \
+        bash "$lone/install.sh" --no-path-hint >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
 # Siapkan ~/.config/osw/os.conf + modul debian di data dir sandbox.
 prepare_debian_config() {
     mkdir -p "$SB/cfg/osw" "$SB/data/osw/os"
@@ -1224,6 +1290,49 @@ test_installer_lone_file_downloads_sources() {
     fi
 }
 
+# Regresi: TMPDIR yang tidak bisa dipakai dulu membuat mktemp gagal, lalu
+# installer tetap mengunduh tag (dan main). Sekarang harus berhenti dengan
+# pesan mktemp yang menyebut direktori yang dicoba, tanpa menyentuh network.
+# mktemp sengaja dibuat gagal lewat stub: /tmp yang sehat tidak bisa dibuat
+# tidak bisa dipakai tanpa root/namespace, jadi kegagalan mktemp disimulasikan
+# agar jalur error deterministik di semua lingkungan.
+test_installer_tmpdir_failure_stops_before_network() {
+    local rusak="$SB/rusak/bukan-dir/tmp"
+    mkdir -p "$SB/rusak"
+    : >"$SB/rusak/bukan-dir"
+
+    installer_run_pipe_stub 404 500 1 "$rusak"
+    expect_rc 1 || return 1
+    expect_err "mktemp" || return 1
+    expect_err "TMPDIR=$rusak" || return 1
+    expect_err "memakai /tmp" || return 1
+    if [[ -s "$SB/curl.log" ]]; then
+        _fail "curl dipanggil setelah mktemp gagal: $(tr '\n' ' ' <"$SB/curl.log")"
+        return 1
+    fi
+}
+
+# Tag 404 = rilis belum terbit: fallback ke main boleh, tetapi harus berlabel.
+test_installer_tag_404_falls_back_to_main() {
+    installer_run_pipe_stub 404 500 0
+    expect_rc 1 || return 1
+    expect_out "Tag v$TEST_VERSION belum terbit; memakai main" || return 1
+    expect_file_contains "$SB/curl.log" "/tags/v$TEST_VERSION" || return 1
+    expect_file_contains "$SB/curl.log" "/heads/main" || return 1
+}
+
+# Error selain 404 (mis. 500) bukan alasan memakai main: installer berhenti.
+test_installer_tag_server_error_stops() {
+    installer_run_pipe_stub 500 404 0
+    expect_rc 1 || return 1
+    expect_err "HTTP 500" || return 1
+    expect_file_contains "$SB/curl.log" "/tags/v$TEST_VERSION" || return 1
+    if grep -qF "/heads/main" "$SB/curl.log"; then
+        _fail "error non-404 pada tag masih memicu fallback main"
+        return 1
+    fi
+}
+
 test_release_workflow_present() {
     local wf="$ROOT_DIR/.github/workflows/release.yml"
     local ci="$ROOT_DIR/.github/workflows/ci.yml"
@@ -1457,6 +1566,9 @@ run_test "checksum install.sh cocok"          test_installer_checksum_matches
 run_test "VERSION == DEFAULT_VERSION"         test_version_matches_installer_default
 run_test "self-update ambil installer tag"    test_self_update_uses_release_tag
 run_test "installer file tunggal unduh sumber" test_installer_lone_file_downloads_sources
+run_test "installer TMPDIR rusak -> mktemp"   test_installer_tmpdir_failure_stops_before_network
+run_test "installer tag 404 -> fallback main" test_installer_tag_404_falls_back_to_main
+run_test "installer tag error lain berhenti"  test_installer_tag_server_error_stops
 run_test "workflow rilis otomatis lengkap"    test_release_workflow_present
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"

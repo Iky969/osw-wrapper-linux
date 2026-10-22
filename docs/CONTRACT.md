@@ -118,7 +118,8 @@ dan config tetap XDG karena dispatcher menghitungnya dari XDG.
   file (tabel `ID`/`ID_LIKE` + `detect_os()`); `tests/run.sh` membandingkan
   kedua salinan dan menguji kedua entry point dengan fixture yang sama.
 - `OSW_UPSTREAM_REPO` / `OSW_UPSTREAM_REF` mengganti repo/ref unduhan installer
-  mode pipe (default ref: tag `v<DEFAULT_VERSION>`, fallback `main`).
+  mode pipe (default ref: tag `v<DEFAULT_VERSION>`, fallback `main` **hanya**
+  kalau URL tag menjawab HTTP 404).
   `self-update` hanya memakai `OSW_UPSTREAM_REPO`; installernya selalu diambil
   dari tag `v<VERSION>`.
 - Variabel `OSW_*` lain (`OSW_YES`, `OSW_DRY`, `OSW_QUIET`, `OSW_NO_COLOR`,

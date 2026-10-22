@@ -114,6 +114,16 @@ Keputusan desain yang perlu diketahui:
   mengunduh snapshot `codeload.github.com/<repo>/tar.gz/refs/heads/<ref>` ke
   direktori sementara (butuh `curl`, `tar`, network). Repo/ref bisa di-override
   lewat `OSW_UPSTREAM_REPO`/`OSW_UPSTREAM_REF`.
+- **Direktori sementara mode pipe** (fix 2026-10-22): `TMPDIR` dihormati dan
+  dibuat dengan `mkdir -p` kalau belum ada; kalau tidak bisa dibuat, installer
+  mencetak peringatan lalu memakai `/tmp`. Kalau `mktemp` tetap gagal,
+  installer berhenti dengan pesan yang menyebut direktori yang dicoba — tidak
+  lagi lanjut mengunduh dengan `tar -C` kosong. Fallback ke `main` hanya untuk
+  **HTTP 404** dari URL tag; error lain (network mati, 5xx) menggagalkan
+  instalasi supaya masalah sesungguhnya tidak tersembunyi.
+- Tes regresi (3): `installer TMPDIR rusak -> mktemp` (tanpa network, tidak
+  mencoba `main`), `installer tag 404 -> fallback main` (fallback berlabel),
+  dan `installer tag error lain berhenti` (HTTP 500 tidak memicu `main`).
 - `--os <nama>` menerima nama modul (`debian`, `void`, ...), bukan `ID` mentah
   dari `/etc/os-release`.
 - Installer tidak memanggil `apt` sama sekali.
@@ -611,6 +621,12 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   verifikasi `install.sh.sha256`, dan `gh release create --verify-tag`; tidak
   lagi membuat tag, `--target`, atau commit/push. README + TODOS menjelaskan
   urutan rilis baru; tes kelengkapan workflow disesuaikan.
+- `fix(install): tangani kegagalan mktemp dan fallback tag hanya pada 404` —
+  `install.sh`: `TMPDIR` dibuat dengan `mkdir -p` (fallback `/tmp` + peringatan),
+  kegagalan `mktemp` berhenti dengan pesan yang menyebut direktori, dan fallback
+  ke `main` hanya untuk HTTP 404 dari URL tag. 3 tes regresi baru di
+  `tests/run.sh` (73 tes, 73 lulus; `install.sh.sha256` dihitung ulang menjadi
+  `1713f293…`).
 - `ci: tambahkan workflow test dan gate rilis` — `ci.yml` dipecah: job `lint`
   (shellcheck v0.10.0 statis) + job `test` matriks `ubuntu:22.04`,
   `ubuntu:24.04`, `debian:bookworm`; rilis pindah ke `release.yml` dengan job

@@ -300,7 +300,14 @@ Aturan penting: **tag tidak boleh menunjuk commit yang belum lulus CI**.
 Push tag memicu `release.yml`; kalau gate tes atau validasi gagal, Release
 tidak terbit. Selama tag belum terbit, `install.sh` versi baru tetap bisa
 dipakai lewat clone repo; mode pipe akan memberi tahu bahwa tag `v<versi>`
-belum ada lalu memakai `main`.
+belum ada lalu memakai `main` — tetapi hanya kalau URL tag itu menjawab
+**HTTP 404**. Error lain (network mati, 5xx) menggagalkan instalasi, bukan
+diam-diam beralih ke `main`.
+
+Mode pipe memakai `TMPDIR` (default `/tmp`), membuatnya dengan `mkdir -p` bila
+belum ada, dan mencetak peringatan lalu memakai `/tmp` kalau `TMPDIR` tidak
+bisa dibuat. Kalau `mktemp` tetap gagal, installer berhenti dengan pesan yang
+menyebut direktori yang dicoba, tanpa menyentuh network.
 
 Catatan:
 

@@ -311,22 +311,70 @@ fi
 # 9. Siapkan sumber (unduh snapshot hanya untuk mode pipe)
 # -----------------------------------------------------------------------------
 TMP_SRC=""
+TMP_BASE=""
 _cleanup() {
     if [[ -n "$TMP_SRC" && -d "$TMP_SRC" ]]; then
         rm -rf "$TMP_SRC"
     fi
+    TMP_SRC=""
 }
 trap _cleanup EXIT
 
-# Unduh snapshot repo untuk satu ref (tags/<tag> atau heads/<branch>).
-_extract_ref() {
+# Direktori dasar untuk mktemp. TMPDIR dihormati: kalau belum ada, dicoba dibuat
+# dengan mkdir -p. Kalau TMPDIR tidak bisa dipakai, installer tidak buntu:
+# peringatan dicetak dan /tmp dipakai sebagai gantinya.
+_tmp_base() {
+    local base="${TMPDIR:-/tmp}"
+    if [[ -d "$base" ]]; then
+        printf '%s\n' "$base"
+        return 0
+    fi
+    if mkdir -p -- "$base" 2>/dev/null; then
+        printf '%s\n' "$base"
+        return 0
+    fi
+    printf 'install.sh: peringatan: direktori sementara %s tidak bisa dibuat; memakai /tmp\n' "$base" >&2
+    mkdir -p -- /tmp 2>/dev/null || true
+    printf '%s\n' /tmp
+}
+
+# Unduh snapshot repo untuk satu ref (tags/<tag> atau heads/<branch>) ke TMP_SRC.
+# Status: 0 = sukses, 2 = HTTP 404 (ref tidak ada), 1 = kegagalan lain.
+_fetch_ref() {
     local ref_path="$1"
     local url="https://codeload.github.com/${UPSTREAM_REPO}/tar.gz/refs/${ref_path}"
-    if [[ -n "$TMP_SRC" && -d "$TMP_SRC" ]]; then
-        rm -rf "$TMP_SRC"
+    local code=""
+    local tarball=""
+
+    _cleanup
+    # Jangan lanjut tanpa direktori kerja: tanpa ini tar menulis ke "-C " kosong
+    # dan installer tetap mencoba network walau mktemp gagal.
+    if ! TMP_SRC="$(mktemp -d "$TMP_BASE/osw-install.XXXXXX" 2>/dev/null)"; then
+        TMP_SRC=""
+        _err "gagal membuat direktori sementara dengan mktemp di $TMP_BASE${TMPDIR:+ (TMPDIR=$TMPDIR)}; periksa direktori itu atau set TMPDIR ke direktori yang bisa ditulis"
+        return 1
     fi
-    TMP_SRC="$(mktemp -d "${TMPDIR:-/tmp}/osw-install.XXXXXX")"
-    curl -fsSL "$url" | tar -xz -C "$TMP_SRC" --strip-components=1
+
+    tarball="$TMP_SRC/sumber.tar.gz"
+    if ! code="$(curl -sS -L -o "$tarball" -w '%{http_code}' "$url")"; then
+        _err "curl gagal mengunduh $url"
+        return 1
+    fi
+    case "$code" in
+        200) ;;
+        404) return 2 ;;
+        *)
+            _err "gagal mengunduh $url: HTTP $code"
+            return 1
+            ;;
+    esac
+
+    if ! tar -xzf "$tarball" -C "$TMP_SRC" --strip-components=1; then
+        _err "arsip sumber $url tidak bisa diekstrak"
+        return 1
+    fi
+    rm -f -- "$tarball"
+    return 0
 }
 
 fetch_sources() {
@@ -343,17 +391,24 @@ fetch_sources() {
         *) ref_path="heads/$UPSTREAM_REF" ;;
     esac
 
+    TMP_BASE="$(_tmp_base)"
+
     _info "Installer dijalankan lewat pipe; mengunduh sumber ${UPSTREAM_REPO}@${UPSTREAM_REF}..."
-    if _extract_ref "$ref_path"; then
+    local rc=0
+    _fetch_ref "$ref_path" || rc=$?
+    if [[ "$rc" -eq 0 ]]; then
         SRC="$TMP_SRC"
         return 0
     fi
 
-    # Tag rilis belum terbit (mis. VERSION baru dinaikkan tapi CI belum
-    # membuat tag). Pakai main supaya tidak buntu, dengan peringatan jelas.
-    if [[ "$ref_path" == "tags/v$DEFAULT_VERSION" ]]; then
-        _info "Tag v$DEFAULT_VERSION belum terbit; memakai main (tidak dipin ke rilis)."
-        if _extract_ref "heads/main"; then
+    # Hanya 404 yang berarti tag rilis belum terbit (mis. VERSION baru
+    # dinaikkan tapi tag belum di-push). Error lain (network mati, 5xx) bukan
+    # alasan memakai main: itu justru menyembunyikan masalah sesungguhnya.
+    if [[ "$rc" -eq 2 && "$ref_path" == "tags/v$DEFAULT_VERSION" ]]; then
+        _info "Tag v$DEFAULT_VERSION belum terbit; memakai main (HTTP 404, tidak dipin ke rilis)."
+        rc=0
+        _fetch_ref "heads/main" || rc=$?
+        if [[ "$rc" -eq 0 ]]; then
             SRC="$TMP_SRC"
             return 0
         fi
