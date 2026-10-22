@@ -548,6 +548,10 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `chore(release): v0.1.5` — `VERSION` dan `DEFAULT_VERSION` menjadi 0.1.5,
+  `install.sh.sha256` dihitung ulang (`f34ae015…`); `sha256sum -c` lulus,
+  `bash -n` OK, actionlint 1.7.7 bersih, shellcheck 0.10.0 0 warning, dan tes
+  70 lulus, 0 gagal. Tag v0.1.5 belum dibuat pada langkah ini.
 - `fix(detect): cocokkan ID_LIKE untuk keluarga arch dan turunannya` — bug
   perangkat Arch Linux ARM (`ID=archarm`, `ID_LIKE=arch`): `bin/osw` dan
   `install.sh` kini memakai blok deteksi identik (tabel `ID`/`ID_LIKE`), urut
