@@ -157,18 +157,13 @@ _err() {
 # 4. Helper _run
 # -----------------------------------------------------------------------------
 _run() {
-    if [[ "${OSW_DRY:-0}" == "1" ]]; then
-        printf 'DRY: %s\n' "$*"
-        return 0
-    fi
-    if [[ "${OSW_DEBUG:-0}" == "1" ]]; then
-        set -x
-    fi
-    "$@"
-    local rc=$?
-    if [[ "${OSW_DEBUG:-0}" == "1" ]]; then
-        set +x
-    fi
+    [[ "${OSW_DRY:-0}" == "1" ]] && { printf 'DRY: %s\n' "$*"; return 0; }
+    local rc=0
+    [[ "${OSW_DEBUG:-0}" == "1" ]] && set -x
+    # Ditangkap eksplisit: dengan set -e, `"$@"` yang gagal langsung mematikan
+    # shell sebelum baris berikutnya, sehingga rc tidak pernah bisa dikembalikan.
+    "$@" || rc=$?
+    [[ "${OSW_DEBUG:-0}" == "1" ]] && set +x
     return "$rc"
 }
 
@@ -396,27 +391,44 @@ do_detect() {
 do_self_update() {
     local target_ver="${VERSION#v}"
 
-    local fetched_ver=""
-    if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
-        target_ver="${fetched_ver#v}"
-    fi
-
     local target_url
     # shellcheck disable=SC2059
     target_url="$(printf "$UPSTREAM_TAG_URL_TEMPLATE" "$target_ver")"
 
-    local tmp_installer
-    tmp_installer="$(mktemp)"
-    trap 'rm -f "$tmp_installer"' RETURN
+    # Dry-run tidak boleh menyentuh network atau membuat file sementara sama
+    # sekali; URL dicetak dari versi lokal (tanpa mengambil VERSION upstream).
+    if [[ "${OSW_DRY:-0}" == "1" ]]; then
+        _info "DRY: self-update dari ${target_url}"
+        return 0
+    fi
+
+    local fetched_ver=""
+    if fetched_ver="$(curl -fsSL "$UPSTREAM_VERSION_URL" 2>/dev/null | tr -d '[:space:]')" && [[ -n "$fetched_ver" ]]; then
+        target_ver="${fetched_ver#v}"
+        # shellcheck disable=SC2059
+        target_url="$(printf "$UPSTREAM_TAG_URL_TEMPLATE" "$target_ver")"
+    fi
 
     _info "Mengunduh installer osw (v${target_ver}) dari ${target_url}..."
+
+    local tmp_installer
+    tmp_installer="$(mktemp)"
+    # Trap ini menghapus file sementara, tetapi harus dicabut sebelum return:
+    # trap yang tertinggal aktif kembali pada return `source`/fungsi berikutnya,
+    # padahal variabel lokal di sini sudah hilang (set -u mematikan shell).
+    trap 'rm -f "$tmp_installer"' RETURN
+
     if ! curl -fsSL "$target_url" -o "$tmp_installer"; then
         _err "gagal mengunduh installer dari $target_url"
+        trap - RETURN
+        rm -f "$tmp_installer"
         return 1
     fi
 
     if ! head -n 1 "$tmp_installer" | grep -q '^#!/usr/bin/env bash'; then
         _err "file installer yang diunduh tidak valid (shebang tidak cocok)"
+        trap - RETURN
+        rm -f "$tmp_installer"
         return 1
     fi
 
@@ -426,6 +438,8 @@ do_self_update() {
     local expected_sha=""
     if ! expected_sha="$(curl -fsSL "$sha_url" 2>/dev/null | awk '{print $1}')" || [[ -z "$expected_sha" ]]; then
         _err "checksum SHA-256 tidak tersedia untuk $target_url, pembaruan dibatalkan"
+        trap - RETURN
+        rm -f "$tmp_installer"
         return 1
     fi
 
@@ -433,10 +447,18 @@ do_self_update() {
     actual_sha="$(sha256sum "$tmp_installer" | awk '{print $1}')"
     if [[ "$actual_sha" != "$expected_sha" ]]; then
         _err "verifikasi checksum SHA-256 gagal ($actual_sha != $expected_sha)"
+        trap - RETURN
+        rm -f "$tmp_installer"
         return 1
     fi
 
-    bash "$tmp_installer"
+    local install_rc=0
+    bash "$tmp_installer" || install_rc=$?
+    trap - RETURN
+    rm -f "$tmp_installer"
+    if [[ "$install_rc" -ne 0 ]]; then
+        return "$install_rc"
+    fi
 
     # Installer menulis ulang config; muat lagi supaya status di bawah
     # menampilkan versi yang baru terpasang, bukan versi proses ini.

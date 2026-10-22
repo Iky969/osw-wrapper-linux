@@ -146,6 +146,15 @@ prepare_debian_config() {
     cp "$ROOT_DIR/os/debian.sh" "$SB/data/osw/os/debian.sh"
 }
 
+# Ambil definisi fungsi dari bin/osw (sebelum blok dispatch) supaya _run dan
+# do_self_update bisa dipanggil langsung dalam satu shell tes.
+make_osw_functions_fixture() {
+    local dest="$1"
+    awk '/^# Early exit untuk subcommand/{exit} {print}' "$OSW" >"$dest"
+    # bin/osw memakai set -euo pipefail; matikan lagi untuk sisa skrip pemanggil.
+    printf 'set +eu\n' >>"$dest"
+}
+
 # Salin repo ke sandbox tanpa satu modul: menguji preflight "modul belum
 # tersedia" tanpa bergantung pada modul mana yang sudah ada di repo.
 repo_without_module() {
@@ -404,6 +413,108 @@ test_self_update_fails_cleanly_without_network() {
     expect_err "gagal mengunduh" || return 1
     if grep -qF "unbound variable" "$ERR"; then
         _fail "self-update gagal karena unbound variable"
+        return 1
+    fi
+}
+
+# _run tidak boleh bergantung pada set -e: perintah yang gagal harus
+# mengembalikan rc-nya sendiri dan dry-run tidak boleh mengeksekusi apa pun.
+test_run_returns_status() {
+    local fixture="$SB/osw-funcs.sh"
+    local marker="$SB/run-marker"
+    make_osw_functions_fixture "$fixture"
+
+    _sandbox_env FIXTURE="$fixture" MARKER="$marker" bash -c '
+set -euo pipefail
+. "$FIXTURE" >/dev/null 2>&1
+set +eu
+rc=0
+_run false || rc=$?
+printf "false-rc=%s\n" "$rc"
+rc=0
+_run bash -c "exit 7" || rc=$?
+printf "exit7-rc=%s\n" "$rc"
+OSW_DRY=1
+_run touch "$MARKER"
+if [[ -e "$MARKER" ]]; then printf "marker=ada\n"; else printf "marker=tidak-ada\n"; fi
+' >"$OUT" 2>"$ERR"
+    RC=$?
+
+    expect_rc 0 || return 1
+    expect_out "false-rc=1" || return 1
+    expect_out "exit7-rc=7" || return 1
+    expect_out "DRY: touch $marker" || return 1
+    expect_out "marker=tidak-ada" || return 1
+}
+
+# Dry-run self-update: tidak ada traffic keluar (curl stub tidak pernah
+# dipanggil) dan tidak ada file sementara yang dibuat.
+test_self_update_dry_run_no_network() {
+    prepare_debian_config
+    mkdir -p "$SB/tmp" "$SB/curl-bin"
+    {
+        printf '#!/usr/bin/env bash\n'
+        printf 'printf "%%s\\n" "$*" >>"%s"\n' "$SB/curl.log"
+        printf 'exit 22\n'
+    } >"$SB/curl-bin/curl"
+    chmod +x "$SB/curl-bin/curl"
+    : >"$SB/curl.log"
+
+    OSW_TEST_PATH="$SB/curl-bin:$TEST_PATH" \
+        _sandbox_env \
+        TMPDIR="$SB/tmp" \
+        https_proxy="http://127.0.0.1:9" \
+        http_proxy="http://127.0.0.1:9" \
+        bash "$OSW" -n self-update >"$OUT" 2>"$ERR"
+    RC=$?
+
+    expect_rc 0 || return 1
+    expect_out "DRY: self-update dari https://raw.githubusercontent.com/Iky969/osw-wrapper-linux/v${TEST_VERSION}/install.sh" || return 1
+    if [[ -s "$SB/curl.log" ]]; then
+        _fail "dry-run memanggil curl: $(cat "$SB/curl.log")"
+        return 1
+    fi
+    if [[ -n "$(ls -A "$SB/tmp")" ]]; then
+        _fail "dry-run meninggalkan file sementara: $(ls -A "$SB/tmp")"
+        return 1
+    fi
+}
+
+# RETURN trap di do_self_update harus dicabut: kalau tertinggal, source atau
+# fungsi berikutnya memicu rm -f pada variabel yang sudah hilang, dan set -u
+# mematikan shell.
+test_self_update_clears_return_trap() {
+    local fixture="$SB/osw-funcs.sh"
+    make_osw_functions_fixture "$fixture"
+    prepare_debian_config
+    mkdir -p "$SB/tmp"
+
+    _sandbox_env \
+        TMPDIR="$SB/tmp" \
+        https_proxy="http://127.0.0.1:9" \
+        http_proxy="http://127.0.0.1:9" \
+        FIXTURE="$fixture" \
+        bash -c '
+set -euo pipefail
+. "$FIXTURE" >/dev/null 2>&1
+set +e
+set -u
+. "$XDG_CONFIG_HOME/osw/os.conf"
+rc=0
+do_self_update >/dev/null 2>&1 || rc=$?
+printf "rc=%s\n" "$rc"
+printf "trap=%s\n" "$(trap -p RETURN)"
+. "$XDG_CONFIG_HOME/osw/os.conf"
+printf "masih-hidup\n"
+' >"$OUT" 2>"$ERR"
+    RC=$?
+
+    expect_rc 0 || return 1
+    expect_out "rc=1" || return 1
+    expect_out_re "^trap=$" || return 1
+    expect_out "masih-hidup" || return 1
+    if [[ -n "$(ls -A "$SB/tmp")" ]]; then
+        _fail "file sementara tertinggal: $(ls -A "$SB/tmp")"
         return 1
     fi
 }
@@ -1095,6 +1206,9 @@ run_test "install tanpa argumen"             test_install_without_args
 run_test "files tanpa argumen"               test_files_without_args
 run_test "list opsi tidak dikenal"           test_list_invalid_option
 run_test "self-update gagal tanpa network"   test_self_update_fails_cleanly_without_network
+run_test "_run mengembalikan rc & dry-run"   test_run_returns_status
+run_test "self-update dry-run tanpa network"  test_self_update_dry_run_no_network
+run_test "self-update mencabut RETURN trap"   test_self_update_clears_return_trap
 
 printf -- '\n--- Fase 3: install.sh ---\n'
 run_test "installer --help"                     test_installer_help

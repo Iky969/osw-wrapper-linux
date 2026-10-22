@@ -345,12 +345,61 @@ dengan `git ls-remote --tags` tanpa menunggu API.
   (memastikan tidak ada lagi `unbound variable` dan kegagalan network dilaporkan
   dengan pesan jelas).
 
-### 2. Cakupan uji belum lengkap
+### 2. Bug `_run`, RETURN trap, dan dry-run `self-update` — TERVERIFIKASI & DIPERBAIKI
 
-- `tests/run.sh` berisi 62 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
-  self-update, 21 tes Fase 3, 11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8,
-  dan 5 tes rilis (checksum, `VERSION` == `DEFAULT_VERSION`, `self-update`
-  memakai tag, installer file tunggal mengunduh sumber, kelengkapan workflow).
+Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
+
+- **`_run` (`bin/osw`)** — `local rc=$?` berada setelah `"$@"` yang berada di
+  bawah `set -e`, jadi baris itu tidak pernah dieksekusi saat perintah gagal:
+  shell mati di dalam `_run` dan `_run` tidak pernah bisa mengembalikan rc
+  non-nol. Diganti pola `"$@" || rc=$?` (rc ditangkap eksplisit, `set +x` untuk
+  `--debug` selalu dijalankan). Catatan: exit code proses di jalur dispatch
+  tetap sama seperti sebelumnya, jadi ini perbaikan struktural/kontrak, bukan
+  perubahan hasil yang terlihat dari luar.
+- **`trap ... RETURN` (`do_self_update`)** — terbukti: setelah fungsi gagal,
+  `trap -p RETURN` masih menampilkan trap, sedangkan `tmp_installer` (variabel
+  lokal) sudah hilang. `source`/fungsi berikutnya yang selesai memicu
+  `rm -f "$tmp_installer"` dan `set -u` mematikan shell
+  (`bash: tmp_installer: unbound variable`, exit 127). Diperbaiki: `trap -
+  RETURN` dicabut sebelum setiap `return` (jalur error, kegagalan installer,
+  dan jalur normal), `rm -f` tetap dijalankan di semua jalur, rc installer
+  tetap diteruskan.
+- **`self-update` mengabaikan dry-run** — `bin/osw -n self-update` tetap
+  mengunduh dan menjalankan installer. Diperbaiki: `OSW_DRY=1` mencetak
+  `DRY: self-update dari <URL tag versi lokal>` lalu `return 0` sebelum ada
+  `curl` atau `mktemp`.
+- Regresi dijaga 3 tes baru di `tests/run.sh`: `_run mengembalikan rc & dry-run`,
+  `self-update dry-run tanpa network` (curl stub + proxy `127.0.0.1:9`, tidak
+  ada file sementara), dan `self-update mencabut RETURN trap` (memastikan
+  `trap -p RETURN` kosong dan `source` berikutnya tidak mematikan shell).
+  Dua tes terakhir **gagal** kalau dijalankan pada `bin/osw` versi sebelumnya
+  (diverifikasi dengan salinan repo berisi `bin/osw` dari `HEAD`).
+- Belum dirilis: `VERSION` sengaja tidak diubah di commit ini, jadi rilis
+  berikutnya perlu menaikkan `VERSION` + `DEFAULT_VERSION` di `install.sh`.
+
+### 3. `VERSION` fallback masih hardcoded (terbuka)
+
+- `bin/osw` memakai `VERSION="0.1.0"` kalau `VERSION` di repo tidak ditemukan
+  (instalasi binary tunggal tanpa direktori repo). Nilai itu tidak ikut naik
+  saat rilis, sehingga `osw version`/`osw status` bisa melaporkan versi yang
+  salah. Belum diperbaiki; perlu sumber versi yang ditanam saat rilis atau
+  dibaca dari `os.conf`.
+
+### 4. Deteksi OS terduplikasi (terbuka)
+
+- `detect_os`/`detect_os_name` ada di `bin/osw` dan `install.sh` dengan daftar
+  family yang sama. Risikonya bisa berbeda tanpa ketahuan; `tests/run.sh` baru
+  membandingkan perilaku lewat beberapa ID, belum seluruh daftar. Belum
+  diperbaiki karena butuh keputusan arsitektur (installer harus tetap bisa
+  berdiri sendiri tanpa `bin/osw`).
+
+### 5. Cakupan uji belum lengkap
+
+- `tests/run.sh` berisi 65 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+  self-update, 3 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
+  11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, dan 5 tes rilis (checksum,
+  `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
+  tunggal mengunduh sumber, kelengkapan workflow).
 - Smoke di 4 container nyata belum dijalankan; lihat `tests/smoke.sh` dan
   `docs/ADDING-OS.md`.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
@@ -389,3 +438,6 @@ dengan `git ls-remote --tags` tanpa menunggu API.
 - `ci: rilis otomatis (tag + checksum + Release)` — `.github/workflows/ci.yml`,
   `install.sh.sha256`, mode pipe `install.sh` dipin ke tag, `self-update`
   memakai URL tag, README ditulis ulang (61 tes lulus).
+- `fix: _run, RETURN trap, dan dry-run self-update` — `bin/osw` (`_run`,
+  `do_self_update`), 3 tes regresi baru di `tests/run.sh` (65 tes total,
+  65 lulus; shellcheck 0 warning).
