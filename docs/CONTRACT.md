@@ -57,15 +57,18 @@ Boleh tidak didefinisikan. Dispatcher memasang fallback yang mencetak
 
 Ketersediaan per modul saat ini:
 
-| Fungsi | debian | void | alpine | gentoo | arch |
-| --- | --- | --- | --- | --- | --- |
-| wajib (10) | ya | ya | ya | ya | ya |
-| `pkg_files` | ya | ya | ya | ya (butuh `qlist`) | ya |
-| `pkg_owner` | ya | ya | ya | ya (butuh `qfile`) | ya |
-| `pkg_orphans` | ya | ya | tidak (3) | ya | ya |
-| `pkg_autoclean` | ya | tidak (3) | tidak (3) | tidak (3) | tidak (3) |
+| Fungsi | debian | void | alpine | gentoo | arch | fedora |
+| --- | --- | --- | --- | --- | --- | --- |
+| wajib (10) | ya | ya | ya | ya | ya | ya |
+| `pkg_files` | ya | ya | ya | ya (butuh `qlist`) | ya | ya (`rpm -ql`) |
+| `pkg_owner` | ya | ya | ya | ya (butuh `qfile`) | ya | ya (`rpm -qf`) |
+| `pkg_orphans` | ya | ya | tidak (3) | ya | ya | ya (butuh `dnf repoquery`) |
+| `pkg_autoclean` | ya | tidak (3) | tidak (3) | tidak (3) | tidak (3) | tidak (3) |
 
 `pkg_clean` di Gentoo membutuhkan `eclean-dist`; tanpa itu `return 3`.
+`pkg_orphans`/`list --user` di Fedora memakai `dnf repoquery`; di dnf4 perintah
+itu berasal dari `dnf-plugins-core`, jadi tanpa paket tersebut keduanya
+`return 3`.
 
 ## Flag non-interaktif
 
@@ -79,6 +82,7 @@ masing-masing. **Jangan** hardcode `-y` di semua modul: arti `-y` berbeda.
 | alpine | `yes=(--no-interactive)` |
 | gentoo | `ask=(--ask)` **kecuali** `OSW_YES=1` |
 | arch | `noconfirm=(--noconfirm)`, karena `pacman -y` berarti refresh database |
+| fedora | dry-run `mode=(--assumeno)`; nyata + `OSW_YES=1` `mode=(-y)`; nyata tanpa `-y` tanpa flag |
 
 ## Exit code
 

@@ -483,6 +483,77 @@ Catatan proses: pembuatan run/job Actions di repo ini kadang tertunda
 belasan menit (run tetap muncul dan sukses); tag bisa diperiksa langsung
 dengan `git ls-remote --tags` tanpa menunggu API.
 
+## Detail Fase 10 — Fedora (dnf)
+
+Status 2026-10-22: modul + tes + CI selesai, menunggu rilis 0.1.6.
+
+### Deteksi
+
+- `fedora` **tidak** masuk `OSW_FAMILY_TABLE` (yang dipakai untuk `ID_LIKE`),
+  melainkan tabel baru `OSW_ID_ONLY_TABLE` yang hanya dibaca untuk `ID`.
+  Alasan: turunan RHEL menulis `ID_LIKE="rhel centos fedora"` tetapi memakai
+  repo/kebijakan paket berbeda.
+- Blok `# >>> blok-deteksi-os` tetap identik byte-per-byte di `bin/osw` dan
+  `install.sh` (dijaga tes `blok deteksi bin/osw == install.sh`).
+- Fixture `tests/run.sh` berubah: `fedora|rhel` dari `unknown` → `fedora`, dan
+  fixture baru `rocky|rhel centos fedora` → `unknown` (exit non-nol).
+  Fixture lama (`archarm|arch`, `unknownX|debian`, `ubuntu`, `alpine|arch`)
+  tetap sama.
+- Matriks sebelum/sesudah (dijalankan langsung dengan `OSW_OS_RELEASE`):
+
+  | os-release | sebelum | sesudah |
+  | --- | --- | --- |
+  | `ID=fedora ID_LIKE=rhel` | rc 1 (unknown) | `fedora`, rc 0 |
+  | `ID=fedora` | rc 1 (unknown) | `fedora`, rc 0 |
+  | `ID=rocky ID_LIKE="rhel centos fedora"` | rc 1 | rc 1 (unknown) |
+  | `ID=centos ID_LIKE="rhel fedora"` | rc 1 | rc 1 |
+  | `ID=almalinux ID_LIKE="rhel centos fedora"` | rc 1 | rc 1 |
+  | `ID=archarm ID_LIKE=arch` | `arch` | `arch` |
+  | `ID=unknownX ID_LIKE=debian` | `debian` | `debian` |
+  | `ID=alpine ID_LIKE=arch` | `alpine` | `alpine` |
+  | `ID=ubuntu` | `debian` | `debian` |
+
+### Modul `os/fedora.sh`
+
+- Binary: `dnf5` kalau ada, lalu `dnf` (dicek dengan `command -v`, tidak ada
+  tebakan versi). Perintah sama untuk keduanya.
+- Aksi: `update` = `dnf makecache`; `upgrade`/`full-upgrade` = `dnf upgrade`;
+  `install`/`remove` = `dnf install`/`remove`; `search`/`info` = `dnf search`/
+  `info`; `list` = `dnf list --installed`; `list --user` =
+  `dnf repoquery --userinstalled`; `autoremove` = `dnf autoremove`;
+  `orphans` = `dnf repoquery --unneeded` (read-only); `clean` =
+  `dnf clean all`; `files`/`owner` = `rpm -ql`/`rpm -qf`.
+- Flag: dry-run `--assumeno` (bukan `-y`), nyata + `OSW_YES=1` `-y`, nyata
+  tanpa `-y` tanpa flag. Catatan: permintaan tugas menyebut "tidak ada `-y`
+  di mode non-dry"; yang diterapkan adalah `-y` hanya saat `OSW_YES=1`,
+  karena tanpa `-y`/`--assumeyes` dnf selalu bertanya sehingga `-y` osw tidak
+  berfungsi. Dry-run (`-n`/`-n -y`) tetap tidak pernah mengirim `-y`.
+- `pkg_autoclean` **tidak** didefinisikan → fallback dispatcher `return 3`.
+  Alasan: `dnf clean` hanya punya `all`/`packages`/`metadata`/`dbcache`/
+  `expire-cache`, tidak ada padanan "cache usang saja".
+- `repoquery` dipakai untuk `orphans` dan `list --user`. Di dnf5 menyatu, di
+  dnf4 berasal dari `dnf-plugins-core`; modul mengecek `dnf repoquery --help`
+  dan mengembalikan 3 dengan pesan yang menyebut paketnya kalau tidak ada.
+- Efek samping yang didokumentasikan (README + `docs/ADDING-OS.md`): dnf bisa
+  menyegarkan cache metadata pada `search`/`info`/`list`/`orphans` dan saat
+  `--assumeno`, jadi bukan "tanpa efek samping".
+
+### Tes
+
+- 6 tes baru: dry-run dnf5 (prefer dnf5, `--assumeno` untuk install/remove/
+  upgrade/full-upgrade/autoremove + `makecache`/`clean all`, tanpa `-y`),
+  fallback dnf4, mode nyata (`-y` hanya dengan `OSW_YES=1`, tanpa
+  `--assumeno`), orphans read-only, files/owner lewat rpm, autoclean → 3.
+- Stub `dnf`/`dnf5`/`rpm` di PATH mencatat argv ke `$SB/dnf.log`; tidak ada
+  package manager nyata yang dijalankan.
+- Dengan `os/fedora.sh` dihapus: **10 gagal** (6 tes fedora + kontrak modul +
+  smoke + deteksi + checksum). Setelah modul ada: **79 lulus, 0 gagal**.
+- **Belum diuji**: `dnf`/`dnf5` asli, perilaku `--assumeno` yang sebenarnya,
+  dan konsistensi output `repoquery --unneeded` — lingkungan ini (Ubuntu
+  22.04) tidak punya dnf maupun runtime container Fedora. Flag dicatat dari
+  dokumentasi resmi DNF4/DNF5 dan harus diverifikasi di container
+  `fedora:latest`.
+
 ## Backlog v0.2
 
 ### `osw changelog` (alias `osw notice`)
@@ -620,6 +691,14 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `feat(fedora): dukungan Fedora dengan dnf` — blok deteksi `bin/osw` +
+  `install.sh` (tetap identik) memakai `OSW_ID_ONLY_TABLE` untuk
+  `ID=fedora`; `os/fedora.sh` (dnf5 lalu dnf, dry-run `--assumeno`, `-y`
+  hanya untuk `OSW_YES=1`, `clean all`, `repoquery --unneeded` untuk
+  orphans, `autoclean` sengaja tidak ada); 6 tes stub baru + fixture
+  `fedora`/`rocky`; README, `docs/CONTRACT.md`, `docs/ADDING-OS.md`
+  diperbarui; `install.sh.sha256` dihitung ulang (`6e0b62a5…`); 79 tes
+  lulus, shellcheck 0 warning, actionlint bersih.
 - `docs: tegaskan aturan pemasangan tag rilis di AGENTS.md` — bagian baru
   "Rilis: pemasangan tag" di `AGENTS.md`: tag hanya pada commit yang membawa
   `VERSION`/`DEFAULT_VERSION` sesuai tag, CI hijau pada commit itu, dan seluruh

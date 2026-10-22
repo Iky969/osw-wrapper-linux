@@ -124,13 +124,68 @@ docker run --rm -it -v "$PWD:/src:ro" debian:stable bash -c '
 ```
 
 Ganti image sesuai family (`voidlinux/voidlinux`, `alpine:latest`,
-`gentoo/stage3`, `archlinux:latest`). Mode tanpa `--stub` hanya menjalankan
-perintah dry-run, jadi tidak ada paket yang berubah.
+`gentoo/stage3`, `archlinux:latest`, `fedora:latest`). Mode tanpa `--stub`
+hanya menjalankan perintah dry-run, jadi tidak ada paket yang berubah.
 
 Untuk memeriksa perintah read-only dengan paket nyata, jalankan manual di
 container, misalnya `osw search bash`, `osw files bash`, `osw owner /bin/bash`.
 Jangan jalankan `autoremove`, `remove`, atau `clean` tanpa `-n` di mesin yang
 masih dipakai.
+
+## Fedora (dnf/dnf5)
+
+Modul `os/fedora.sh` memilih binary sendiri: `dnf5` kalau ada (Fedora 41+),
+lalu `dnf` (Python). Keduanya menerima opsi global di belakang subcommand,
+jadi daftar flag sama. Pemetaan `ID=fedora` ada di `OSW_ID_ONLY_TABLE`, bukan
+`OSW_FAMILY_TABLE`, supaya `ID_LIKE=fedora` (rocky/almalinux/centos) tidak ikut
+terpetakan.
+
+Flag per aksi:
+
+| Aksi `osw` | Perintah | Catatan |
+| --- | --- | --- |
+| `update` | `dnf makecache` | Unduh metadata repo |
+| `upgrade` | `dnf upgrade` | `full-upgrade` sama: Fedora tidak memisahkan |
+| `install` | `dnf install` | |
+| `remove` | `dnf remove` | |
+| `search` | `dnf search` | |
+| `info` | `dnf info` | |
+| `list` | `dnf list --installed` | |
+| `list --user` | `dnf repoquery --userinstalled` | Butuh `dnf repoquery` |
+| `files` / `owner` | `rpm -ql` / `rpm -qf` | Read-only, dari rpm |
+| `autoremove` | `dnf autoremove` | |
+| `orphans` | `dnf repoquery --unneeded` | Read-only, hanya mendaftar |
+| `clean` | `dnf clean all` | dnf5 butuh tipe cache (`all`) |
+| `autoclean` | — | Tidak ada padanan → fallback `return 3` |
+
+Flag konfirmasi:
+
+- **Dry-run (`OSW_DRY=1`) → `--assumeno`**, bukan `-y`. dnf menghitung
+transaksi lalu menjawab "tidak", jadi pratinjau `DRY:` tidak pernah berarti
+"setujui".
+- **Nyata + `OSW_YES=1` → `-y`**. Ini satu-satunya cara non-interaktif dnf;
+tanpa `-y` (dan tanpa `--assumeno`) dnf bertanya ke pengguna.
+- **Nyata tanpa `-y` → tanpa flag**, sama seperti package manager lain.
+
+Sumber verifikasi: dokumentasi resmi DNF4
+(<https://dnf.readthedocs.io/en/latest/command_ref.html>) dan DNF5
+(<https://dnf5.readthedocs.io/en/latest/dnf5.8.html>,
+<https://dnf5.readthedocs.io/en/latest/commands/repoquery.8.html>,
+<https://dnf5.readthedocs.io/en/latest/commands/clean.8.html>).
+Lingkungan pengembangan modul ini (Ubuntu 22.04) tidak punya `dnf`, `dnf5`,
+maupun runtime container Fedora, jadi flag **belum** dicocokkan dengan
+`dnf --help`/`dnf5 --help` di binary nyata; verifikasi perilaku sebenarnya
+harus dilakukan di container `fedora:latest` (lihat perintah di atas).
+
+Efek samping yang jujur harus disebut:
+
+- `search`, `info`, `list`, `orphans`, dan juga `--assumeno` **tidak**
+  mengubah paket terpasang, tetapi dnf dapat menyegarkan cache metadata
+  (mengunduh metadata repo) saat cache kedaluwarsa. Jangan klaim "tanpa efek
+  samping".
+- `repoquery` di dnf4 berasal dari `dnf-plugins-core`; modul mengecek
+  `dnf repoquery --help` dan mengembalikan 3 dengan pesan yang menyebut
+  paketnya kalau tidak tersedia.
 
 ## Jebakan yang sudah pernah kena
 
@@ -142,3 +197,9 @@ masih dipakai.
 - **`pacman -Qtdq` keluar 1 saat tidak ada orphan**; itu bukan error.
 - **Modul yang mendefinisikan `pkg_autoclean` palsu** akan lolos kontrak tetapi
   menyesatkan pengguna; lebih baik biarkan fallback 3.
+- **`dnf -y` ≠ pratinjau.** `-y` menyetujui transaksi; untuk dry-run gunakan
+  `--assumeno` supaya dnf menghitung transaksi lalu menolaknya.
+- **`dnf clean` di dnf5 butuh tipe cache.** `dnf5 clean` tanpa argumen gagal;
+  `clean all` valid di dnf4 dan dnf5.
+- **`dnf repoquery` bukan inti dnf4.** Di dnf4 butuh `dnf-plugins-core`; di dnf5
+  sudah menyatu. Cek dulu, jangan asumsikan ada.

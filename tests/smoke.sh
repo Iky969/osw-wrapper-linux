@@ -32,7 +32,7 @@ usage() {
     cat <<'EOF'
 Usage: bash tests/smoke.sh [--os <name>] [--stub]
 
-  --os <name>   Hanya uji modul itu (debian, void, alpine, gentoo, arch)
+  --os <name>   Hanya uji modul itu (debian, void, alpine, gentoo, arch, fedora)
   --stub        Pakai binari package manager palsu di PATH (hermetik, semua
                 subcommand termasuk search/files/owner/orphans)
   -h, --help    Tampilkan bantuan ini
@@ -80,6 +80,7 @@ detect_family() {
         alpine) printf 'alpine\n' ;;
         void) printf 'void\n' ;;
         gentoo | funtoo) printf 'gentoo\n' ;;
+        fedora) printf 'fedora\n' ;;
         debian | ubuntu | mint | linuxmint | pop | kali) printf 'debian\n' ;;
         arch | manjaro | endeavouros) printf 'arch\n' ;;
         *) printf 'unknown\n' ;;
@@ -123,7 +124,8 @@ STUB
     chmod +x "$SHIM/_stub"
     local name=""
     for name in apt-get apt-cache apt-mark dpkg xbps-install xbps-remove \
-        xbps-query apk emerge qlist qfile eclean-dist pacman sudo doas; do
+        xbps-query apk emerge qlist qfile eclean-dist pacman \
+        dnf dnf5 rpm sudo doas; do
         ln -s "$SHIM/_stub" "$SHIM/$name"
     done
 }

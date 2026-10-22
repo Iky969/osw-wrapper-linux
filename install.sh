@@ -56,7 +56,7 @@ Usage: install.sh [OPTIONS]
 Pasang $PROJECT (wrapper package manager Linux) untuk pengguna saat ini.
 
 Options:
-  --os <name>        Paksa modul OS: debian, void, alpine, gentoo, arch
+  --os <name>        Paksa modul OS: debian, void, alpine, gentoo, arch, fedora
   --redetect         Deteksi ulang OS dan perbarui INSTALLED_AT
   --prefix <dir>     Prefix binary (default: ~/.local, binary ke <dir>/bin/osw).
                      Data dan config tetap mengikuti XDG agar sama dengan yang
@@ -95,7 +95,12 @@ _os_release_value() {
 # ini yang dipetakan; turunan lain bisa memakai package manager/repo berbeda.
 OSW_FAMILY_TABLE='debian:debian ubuntu:debian void:void alpine:alpine gentoo:gentoo arch:arch archarm:arch'
 
-# token -> family; rc 1 kalau token tidak ada di tabel.
+# Family yang HANYA boleh dipetakan dari ID, tidak pernah dari ID_LIKE.
+# Fedora ada di sini karena turunan RHEL (rocky, almalinux, centos) memakai
+# repo dan perilaku paket yang berbeda walau ID_LIKE-nya menyebut fedora.
+OSW_ID_ONLY_TABLE='fedora:fedora'
+
+# token -> family dari tabel ID_LIKE; rc 1 kalau token tidak ada di tabel.
 _osw_family_for() {
     local token="$1"
     local pair=""
@@ -111,11 +116,31 @@ _osw_family_for() {
     return 1
 }
 
+# ID -> family: tabel ID_LIKE dulu, lalu token yang hanya valid dari ID.
+# Token ID_LIKE tidak pernah memakai OSW_ID_ONLY_TABLE.
+_osw_family_for_id() {
+    local family=""
+    local pair=""
+    local -a pairs=()
+    if family="$(_osw_family_for "$1")"; then
+        printf '%s\n' "$family"
+        return 0
+    fi
+    read -r -a pairs <<<"$OSW_ID_ONLY_TABLE"
+    for pair in "${pairs[@]}"; do
+        if [[ "${pair%%:*}" == "$1" ]]; then
+            printf '%s\n' "${pair#*:}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 detect_os() {
     local family=""
     local token=""
     local -a likes=()
-    if family="$(_osw_family_for "$(_os_release_value ID)")"; then
+    if family="$(_osw_family_for_id "$(_os_release_value ID)")"; then
         printf '%s\n' "$family"
         return 0
     fi
@@ -290,12 +315,12 @@ fi
 OS_NAME="$DETECTED_NAME"
 
 case "$OS" in
-    debian | void | alpine | gentoo | arch) ;;
+    debian | void | alpine | gentoo | arch | fedora) ;;
     *)
         if [[ "$OS" == "unknown" && -z "$OS_OVERRIDE" ]]; then
-            die "$(detect_os_unrecognized). OS yang didukung: debian, void, alpine, gentoo, arch."
+            die "$(detect_os_unrecognized). OS yang didukung: debian, void, alpine, gentoo, arch, fedora."
         fi
-        die "OS tidak didukung: $OS. OS yang didukung: debian, void, alpine, gentoo, arch."
+        die "OS tidak didukung: $OS. OS yang didukung: debian, void, alpine, gentoo, arch, fedora."
         ;;
 esac
 

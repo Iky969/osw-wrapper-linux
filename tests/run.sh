@@ -291,6 +291,35 @@ installer_run_alt_osrel() {
     return 0
 }
 
+# Stub dnf/dnf5/rpm: setiap pemanggilan dicatat ke $SB/dnf.log, tidak ada
+# package manager nyata yang dijalankan. Argumen = binary yang dibuat, mis.
+# "dnf5 dnf rpm" (urutan tidak penting).
+_make_dnf_stub() {
+    local dir="$SB/dnf-bin"
+    local name=""
+    mkdir -p "$dir"
+    cat >"$dir/_stub" <<'STUB'
+#!/usr/bin/env bash
+printf '%s %s\n' "$(basename "$0")" "$*" >>"$DNF_LOG"
+exit 0
+STUB
+    chmod +x "$dir/_stub"
+    for name in "$@"; do
+        ln -sf "$dir/_stub" "$dir/$name"
+    done
+    : >"$SB/dnf.log"
+    OSW_TEST_PATH="$dir:$TEST_PATH"
+}
+
+# Jalankan binary osw dengan PATH stub dnf; DNF_LOG diteruskan ke stub.
+bin_run_dnf() {
+    local bin="$1"
+    shift
+    _sandbox_env DNF_LOG="$SB/dnf.log" "$bin" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
 # -----------------------------------------------------------------------------
 # Assertion
 # -----------------------------------------------------------------------------
@@ -1162,6 +1191,138 @@ test_arch_autoclean_unsupported() {
 }
 
 # -----------------------------------------------------------------------------
+# Fase Fedora: modul dnf/dnf5
+# -----------------------------------------------------------------------------
+test_fedora_dry_run_prefers_dnf5() {
+    # Kedua binary ada: dnf5 yang dipakai. Dry-run memakai --assumeno, bukan -y.
+    _make_dnf_stub dnf5 dnf rpm
+    installer_run --os fedora --no-path-hint
+    expect_rc 0 || return 1
+    expect_file "$SB/data/osw/os/fedora.sh" || return 1
+    expect_file_contains "$SB/cfg/osw/os.conf" "OS=fedora" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n install neovim
+    expect_rc 0 || return 1
+    expect_dry "dnf5 install --assumeno neovim" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n remove neovim
+    expect_rc 0 || return 1
+    expect_dry "dnf5 remove --assumeno neovim" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n upgrade
+    expect_rc 0 || return 1
+    expect_dry "dnf5 upgrade --assumeno" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n full-upgrade
+    expect_rc 0 || return 1
+    expect_dry "dnf5 upgrade --assumeno" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n autoremove
+    expect_rc 0 || return 1
+    expect_dry "dnf5 autoremove --assumeno" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n update
+    expect_rc 0 || return 1
+    expect_dry "dnf5 makecache" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n clean
+    expect_rc 0 || return 1
+    expect_dry "dnf5 clean all" || return 1
+
+    # -y global tidak boleh menggantikan --assumeno saat dry-run.
+    bin_run_dnf "$SB/bin/osw" -n -y install neovim
+    expect_rc 0 || return 1
+    expect_dry "dnf5 install --assumeno neovim" || return 1
+    if grep -qE '(^| )(-y|--assumeyes)( |$)' "$OUT"; then
+        _fail "dry-run masih memakai -y: $(tr '\n' ' ' <"$OUT")"
+        return 1
+    fi
+}
+
+test_fedora_fallback_dnf4() {
+    # Hanya dnf (Python) tersedia: semua aksi tetap memakai flag yang sama.
+    _make_dnf_stub dnf rpm
+    installer_run --os fedora --no-path-hint
+    expect_rc 0 || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n install neovim
+    expect_rc 0 || return 1
+    expect_dry "dnf install --assumeno neovim" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n remove neovim
+    expect_dry "dnf remove --assumeno neovim" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n upgrade
+    expect_dry "dnf upgrade --assumeno" || return 1
+
+    bin_run_dnf "$SB/bin/osw" -n autoremove
+    expect_dry "dnf autoremove --assumeno" || return 1
+}
+
+test_fedora_non_dry_flags() {
+    # Mode nyata (stub dieksekusi): -y hanya dikirim kalau OSW_YES=1, dan
+    # --assumeno tidak pernah dikirim di mode nyata.
+    _make_dnf_stub dnf5 dnf rpm
+    installer_run --os fedora --no-path-hint
+    expect_rc 0 || return 1
+
+    bin_run_dnf "$SB/bin/osw" install neovim
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/dnf.log" "dnf5 install neovim" || return 1
+
+    : >"$SB/dnf.log"
+    bin_run_dnf "$SB/bin/osw" -y install neovim
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/dnf.log" "dnf5 install -y neovim" || return 1
+    if grep -qF -- "--assumeno" "$SB/dnf.log"; then
+        _fail "mode nyata masih mengirim --assumeno"
+        return 1
+    fi
+    if grep -qF -- "--assumeyes" "$SB/dnf.log"; then
+        _fail "mode nyata mengirim --assumeyes (harus -y)"
+        return 1
+    fi
+}
+
+test_fedora_orphans_readonly() {
+    _make_dnf_stub dnf5 dnf rpm
+    installer_run --os fedora --no-path-hint
+    expect_rc 0 || return 1
+
+    bin_run_dnf "$SB/bin/osw" orphans
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/dnf.log" "dnf5 repoquery --unneeded" || return 1
+    if grep -qE ' (install|remove|upgrade|autoremove|clean|makecache)( |$)' "$SB/dnf.log"; then
+        _fail "orphans menjalankan aksi yang mengubah sistem: $(tr '\n' ' ' <"$SB/dnf.log")"
+        return 1
+    fi
+}
+
+test_fedora_owner_files_rpm() {
+    _make_dnf_stub dnf5 dnf rpm
+    installer_run --os fedora --no-path-hint
+    expect_rc 0 || return 1
+
+    bin_run_dnf "$SB/bin/osw" files neovim
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/dnf.log" "rpm -ql neovim" || return 1
+
+    : >"$SB/dnf.log"
+    bin_run_dnf "$SB/bin/osw" owner /usr/bin/bash
+    expect_rc 0 || return 1
+    expect_file_contains "$SB/dnf.log" "rpm -qf /usr/bin/bash" || return 1
+}
+
+test_fedora_autoclean_unsupported() {
+    _make_dnf_stub dnf5 dnf rpm
+    installer_run --os fedora --no-path-hint
+    expect_rc 0 || return 1
+    bin_run_dnf "$SB/bin/osw" autoclean
+    expect_rc 3 || return 1
+    expect_err "fitur autoclean belum didukung untuk OS=fedora" || return 1
+}
+
+# -----------------------------------------------------------------------------
 # Fase 8: kontrak modul & smoke lintas modul
 # -----------------------------------------------------------------------------
 test_contract_all_modules() {
@@ -1173,7 +1334,8 @@ test_contract_all_modules() {
     expect_out "PASS  os/alpine.sh" || return 1
     expect_out "PASS  os/gentoo.sh" || return 1
     expect_out "PASS  os/arch.sh" || return 1
-    expect_out "5 modul: 0 gagal" || return 1
+    expect_out "PASS  os/fedora.sh" || return 1
+    expect_out "6 modul: 0 gagal" || return 1
 }
 
 test_contract_rejects_missing_funcs() {
@@ -1207,6 +1369,7 @@ test_smoke_stub_all_modules() {
     expect_out "PASS  alpine" || return 1
     expect_out "PASS  gentoo" || return 1
     expect_out "PASS  arch" || return 1
+    expect_out "PASS  fedora" || return 1
     expect_out ", 0 gagal" || return 1
 }
 
@@ -1406,7 +1569,8 @@ DETECT_FIXTURES=(
     "unknownX|debian|debian"
     "ubuntu||debian"
     "alpine|arch|alpine"
-    "fedora|rhel|unknown"
+    "fedora|rhel|fedora"
+    "rocky|rhel centos fedora|unknown"
 )
 
 # Kontrak: untuk setiap fixture, bin/osw dan install.sh harus sama.
@@ -1470,13 +1634,15 @@ test_detect_block_identical() {
 }
 
 # Family tak dikenal tidak boleh ditulis ke config sebagai OS=unknown.
+# Turunan RHEL sengaja dipakai: ID_LIKE-nya menyebut fedora, tetapi
+# pemetaan fedora hanya berlaku dari ID.
 test_detect_unknown_writes_no_config() {
-    write_os_release_like "$SB/os-release" "fedora" "rhel" "Fedora Linux"
+    write_os_release_like "$SB/os-release" "rocky" "rhel centos fedora" "Rocky Linux"
     osw_run_osrel "$SB/os-release" detect
     expect_rc 1 || return 1
     expect_absent "$SB/cfg/osw/os.conf" || return 1
-    expect_err "ID=fedora" || return 1
-    expect_err "ID_LIKE=rhel" || return 1
+    expect_err "ID=rocky" || return 1
+    expect_err "ID_LIKE=rhel centos fedora" || return 1
 }
 
 printf 'osw test suite (%s)\n\n' "$ROOT_DIR"
@@ -1548,6 +1714,14 @@ printf -- '\n--- Fase 7: modul arch ---\n'
 run_test "arch dry-run (--noconfirm)"          test_arch_dry_run
 run_test "arch autoremove"                     test_arch_autoremove
 run_test "arch autoclean -> exit 3"            test_arch_autoclean_unsupported
+
+printf -- '\n--- Fase Fedora: modul dnf/dnf5 ---\n'
+run_test "fedora dry-run (--assumeno, dnf5)"     test_fedora_dry_run_prefers_dnf5
+run_test "fedora fallback ke dnf4"              test_fedora_fallback_dnf4
+run_test "fedora mode nyata: -y hanya dgn -y"   test_fedora_non_dry_flags
+run_test "fedora orphans read-only"             test_fedora_orphans_readonly
+run_test "fedora files/owner lewat rpm"         test_fedora_owner_files_rpm
+run_test "fedora autoclean -> exit 3"           test_fedora_autoclean_unsupported
 
 printf -- '\n--- Fase 8: kontrak & smoke modul ---\n'
 run_test "contract semua modul"               test_contract_all_modules

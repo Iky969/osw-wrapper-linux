@@ -2,8 +2,8 @@
 
 **Different distros. Same commands.**
 
-Satu perintah package manager untuk Debian/Ubuntu, Void, Alpine, Gentoo, dan
-Arch. `osw` mendeteksi *family* OS sekali saat instalasi, lalu memilih modul
+Satu perintah package manager untuk Debian/Ubuntu, Void, Alpine, Gentoo, Arch,
+dan Fedora. `osw` mendeteksi *family* OS sekali saat instalasi, lalu memilih modul
 `os/<family>.sh`; perintah yang tidak didukung di suatu OS ditolak dengan exit
 code 3, bukan ditebak.
 
@@ -62,7 +62,7 @@ Installer tidak pernah memanggil package manager dan tidak mengubah rc file.
 Opsi installer:
 
 ```
---os <name>      Paksa modul (debian, void, alpine, gentoo, arch)
+--os <name>      Paksa modul (debian, void, alpine, gentoo, arch, fedora)
 --redetect       Deteksi ulang family OS dan perbarui INSTALLED_AT
 --prefix <dir>   Binary ke <dir>/bin/osw (data & config tetap XDG)
 --no-path-hint   Jangan cetak saran PATH
@@ -199,6 +199,7 @@ VERSION=0.1.2
 | alpine | alpine | apk | `os/alpine.sh` |
 | gentoo | gentoo | Portage | `os/gentoo.sh` |
 | arch | arch, archarm | pacman | `os/arch.sh` |
+| fedora | fedora (**hanya dari `ID`**) | dnf5 lalu dnf | `os/fedora.sh` |
 
 Hanya token di tabel itu yang dipetakan. Turunan yang mencantumkan token
 induknya di `ID_LIKE` ikut terdeteksi (mis. Linux Mint `ID=mint` +
@@ -207,30 +208,52 @@ lain di `ID_LIKE` sengaja **tidak** diterima karena bisa memakai package
 manager atau repo berbeda; OS seperti itu ditolak dengan pesan
 `OS tidak dikenali (ID=..., ID_LIKE=...)`.
 
+Pengecualian: **fedora hanya dipetakan dari `ID=fedora`**, tidak pernah dari
+`ID_LIKE`. Turunan RHEL (`rocky`, `almalinux`, `centos`) sering menulis
+`ID_LIKE="rhel centos fedora"`, tetapi memakai repo dan kebijakan paket yang
+berbeda; OS seperti itu tetap ditolak sampai ada modulnya sendiri.
+
 Pemetaan perintah:
 
-| Perintah `osw` | debian | void | alpine | gentoo | arch |
-| --- | --- | --- | --- | --- | --- |
-| `update` | `apt-get update` | `xbps-install -S` | `apk update` | `emerge --sync` | `pacman -Sy` |
-| `upgrade` | `apt-get upgrade` | `xbps-install -u` | `apk upgrade` | `emerge -uDN @world` | `pacman -Su` |
-| `full-upgrade` | `apt-get full-upgrade` | `xbps-install -Su` | `apk upgrade` | `emerge -uDN @world` | `pacman -Syu` |
-| `install` | `apt-get install` | `xbps-install` | `apk add` | `emerge` | `pacman -S` |
-| `remove` | `apt-get remove` | `xbps-remove` | `apk del` | `emerge --unmerge` | `pacman -Rns` |
-| `search` | `apt-cache search` | `xbps-query -Rs` | `apk search` | `emerge --search` | `pacman -Ss` |
-| `info` | `apt-cache show` | `xbps-query -R` | `apk info -a` | `qlist -Iv` / `emerge -pv` | `pacman -Si` |
-| `list` | `dpkg -l` | `xbps-query -l` | `apk info` | `qlist -I` / isi `/var/db/pkg` | `pacman -Q` |
-| `list --user` | `apt-mark showmanual` | `xbps-query -m` | tidak didukung (3) | `/var/lib/portage/world` | `pacman -Qe` |
-| `files` | `dpkg -L` | `xbps-query -f` | `apk info -L` | `qlist` | `pacman -Ql` |
-| `owner` | `dpkg -S` | `xbps-query -o` | `apk info --who-owns` | `qfile` | `pacman -Qo` |
-| `autoremove` | `apt-get autoremove` | `xbps-remove -o` | no-op (apk sudah bersih) | `emerge -p/--depclean` | `pacman -Qtdq` + `-Rns` |
-| `orphans` | `apt-get -s autoremove` | `xbps-query -O` | tidak didukung (3) | `emerge -p --depclean` | `pacman -Qtdq` |
-| `clean` | `apt-get clean` | `xbps-remove -O` | `apk cache clean` | `eclean-dist --deep` | `pacman -Sc` |
-| `autoclean` | `apt-get autoclean` | tidak didukung (3) | tidak didukung (3) | tidak didukung (3) | tidak didukung (3) |
+| Perintah `osw` | debian | void | alpine | gentoo | arch | fedora |
+| --- | --- | --- | --- | --- | --- | --- |
+| `update` | `apt-get update` | `xbps-install -S` | `apk update` | `emerge --sync` | `pacman -Sy` | `dnf makecache` |
+| `upgrade` | `apt-get upgrade` | `xbps-install -u` | `apk upgrade` | `emerge -uDN @world` | `pacman -Su` | `dnf upgrade` |
+| `full-upgrade` | `apt-get full-upgrade` | `xbps-install -Su` | `apk upgrade` | `emerge -uDN @world` | `pacman -Syu` | `dnf upgrade` |
+| `install` | `apt-get install` | `xbps-install` | `apk add` | `emerge` | `pacman -S` | `dnf install` |
+| `remove` | `apt-get remove` | `xbps-remove` | `apk del` | `emerge --unmerge` | `pacman -Rns` | `dnf remove` |
+| `search` | `apt-cache search` | `xbps-query -Rs` | `apk search` | `emerge --search` | `pacman -Ss` | `dnf search` |
+| `info` | `apt-cache show` | `xbps-query -R` | `apk info -a` | `qlist -Iv` / `emerge -pv` | `pacman -Si` | `dnf info` |
+| `list` | `dpkg -l` | `xbps-query -l` | `apk info` | `qlist -I` / isi `/var/db/pkg` | `pacman -Q` | `dnf list --installed` |
+| `list --user` | `apt-mark showmanual` | `xbps-query -m` | tidak didukung (3) | `/var/lib/portage/world` | `pacman -Qe` | `dnf repoquery --userinstalled` |
+| `files` | `dpkg -L` | `xbps-query -f` | `apk info -L` | `qlist` | `pacman -Ql` | `rpm -ql` |
+| `owner` | `dpkg -S` | `xbps-query -o` | `apk info --who-owns` | `qfile` | `pacman -Qo` | `rpm -qf` |
+| `autoremove` | `apt-get autoremove` | `xbps-remove -o` | no-op (apk sudah bersih) | `emerge -p/--depclean` | `pacman -Qtdq` + `-Rns` | `dnf autoremove` |
+| `orphans` | `apt-get -s autoremove` | `xbps-query -O` | tidak didukung (3) | `emerge -p --depclean` | `pacman -Qtdq` | `dnf repoquery --unneeded` |
+| `clean` | `apt-get clean` | `xbps-remove -O` | `apk cache clean` | `eclean-dist --deep` | `pacman -Sc` | `dnf clean all` |
+| `autoclean` | `apt-get autoclean` | tidak didukung (3) | tidak didukung (3) | tidak didukung (3) | tidak didukung (3) | tidak didukung (3) |
 
 Flag non-interaktif berbeda per package manager dan **tidak** selalu `-y`:
-Debian/Void memakai `-y`; Alpine `--no-interactive`; Gentoo menambahkan
+Debian/Void/Fedora memakai `-y`; Alpine `--no-interactive`; Gentoo menambahkan
 `--ask` kecuali `OSW_YES=1`; Arch memakai `--noconfirm` karena `-y` di pacman
-berarti refresh database.
+berarti refresh database. Di Fedora, **dry-run memakai `dnf --assumeno`, bukan
+`-y`**, sehingga pratinjau `DRY:` tidak pernah menyetujui transaksi.
+
+Catatan Fedora:
+
+- `dnf5` dipakai kalau ada (Fedora 41+), lalu `dnf` (Python); perintah dan flag
+  yang dijalankan sama untuk keduanya.
+- `dnf repoquery` dibutuhkan `list --user` dan `orphans`. Di dnf5 perintah itu
+  sudah menyatu; di dnf4 butuh `dnf-plugins-core`. Tanpa itu keduanya
+  mengembalikan exit 3 dengan pesan yang menyebut paketnya.
+- `autoclean` tidak didukung (3): `dnf clean` hanya punya tipe
+  `all`/`packages`/`metadata`/`dbcache`/`expire-cache`, tidak ada padanan
+  "cache usang saja".
+- `search`, `info`, `list`, dan `orphans` **tidak mengubah paket terpasang**,
+  tetapi dnf dapat menyegarkan cache metadata (mengunduh metadata repo) saat
+  cache kedaluwarsa. Begitu pula `--assumeno`: transaksi tidak dijalankan,
+  tetapi metadata bisa tetap diunduh. Jadi ini bukan "tanpa efek samping"
+  pada disk.
 
 Butuh `qlist`, `qfile`, `eclean-dist` (Gentoo: `app-portage/portage-utils`,
 `app-portage/gentoolkit`) untuk `files`, `owner`, dan `clean`; tanpa itu
@@ -250,7 +273,7 @@ bash tests/smoke.sh --os debian  # dry-run dengan binari asli host
 Tes hermetik: `HOME` dan semua `XDG_*` diarahkan ke direktori sementara, tanpa
 root, tanpa apt, tanpa network. `tests/run.sh` juga menjaga `VERSION` ==
 `DEFAULT_VERSION` dan `install.sh.sha256` tetap cocok dengan `install.sh`.
-Smoke di container nyata (Debian, Void, Alpine, Gentoo) belum dijalankan
+Smoke di container nyata (Debian, Void, Alpine, Gentoo, Fedora) belum dijalankan
 otomatis; lihat `docs/ADDING-OS.md`.
 
 ## Rilis otomatis (CI)
