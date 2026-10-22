@@ -25,14 +25,24 @@ jobs:
           - ubuntu:22.04
           - ubuntu:24.04
           - debian:bookworm
+          - fedora:latest
     container: ${{ matrix.container }}
     steps:
       - name: Pasang dependensi
         # git dibutuhkan actions/checkout; sisanya untuk tes dan unduhan.
+        # Image Fedora tidak punya apt-get; dnf dipakai untuk keluarga itu.
         run: |
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends \
-            ca-certificates coreutils curl git tar xz-utils
+          set -euo pipefail
+          case "${{ matrix.container }}" in
+            fedora:*)
+              dnf install -y ca-certificates coreutils curl git tar xz
+              ;;
+            *)
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                ca-certificates coreutils curl git tar xz-utils
+              ;;
+          esac
 
       - name: Checkout
         uses: actions/checkout@v4

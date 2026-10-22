@@ -538,6 +538,19 @@ Status 2026-10-22: modul + tes + CI selesai, menunggu rilis 0.1.6.
   menyegarkan cache metadata pada `search`/`info`/`list`/`orphans` dan saat
   `--assumeno`, jadi bukan "tanpa efek samping".
 
+### CI
+
+- `fedora:latest` ditambahkan ke matriks `ci.yml` **dan** `release.yml`;
+  langkah `Pasang dependensi` bercabang `case`: `fedora:*` memakai
+  `dnf install -y ca-certificates coreutils curl git tar xz`, image lain tetap
+  `apt-get` (`ca-certificates coreutils curl git tar xz-utils`). `git` ikut di
+  Fedora karena `actions/checkout` membutuhkannya.
+- Tes baru `matriks CI == matriks rilis` di `tests/run.sh` mengekstrak daftar
+  image dari blok `matrix: container:` kedua workflow dan membandingkannya
+  (terbukti gagal kalau `fedora:latest` dihapus dari satu file), plus menuntut
+  `fedora:latest` dan langkah `dnf install -y` ada di keduanya.
+- `.shellcheckrc` tidak berubah (tanpa `disable=` baru).
+
 ### Tes
 
 - 6 tes baru: dry-run dnf5 (prefer dnf5, `--assumeno` untuk install/remove/
@@ -691,6 +704,10 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `ci: tambahkan fedora:latest ke matriks tes` — `fedora:latest` masuk
+  matriks `ci.yml` + `release.yml` (sinkron), langkah dependensi bercabang
+  `apt-get`/`dnf`, tes `matriks CI == matriks rilis` ditambahkan (80 tes,
+  80 lulus; actionlint bersih).
 - `feat(fedora): dukungan Fedora dengan dnf` — blok deteksi `bin/osw` +
   `install.sh` (tetap identik) memakai `OSW_ID_ONLY_TABLE` untuk
   `ID=fedora`; `os/fedora.sh` (dnf5 lalu dnf, dry-run `--assumeno`, `-y`

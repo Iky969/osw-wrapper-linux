@@ -287,7 +287,9 @@ tag, dan tidak mendorong commit apa pun.
 1. **Lint** — `bash -n` dan shellcheck v0.10.0; tarball shellcheck diverifikasi
    SHA-256 sebelum ekstraksi.
 2. **Tes** — matriks container `ubuntu:22.04`, `ubuntu:24.04`,
-   `debian:bookworm`, menjalankan `tests/run.sh` (hermetik).
+   `debian:bookworm`, `fedora:latest`, menjalankan `tests/run.sh` (hermetik).
+   Langkah dependensi bercabang: `apt-get` untuk Debian/Ubuntu, `dnf install`
+   untuk Fedora.
 
 `.github/workflows/release.yml` — hanya pada push tag `v*`, dengan job `test`
 (matrisk sama) sebagai gate `needs: test`:

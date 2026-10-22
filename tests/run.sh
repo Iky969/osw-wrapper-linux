@@ -150,6 +150,16 @@ extract_detect_block() {
     awk '/^# >>> blok-deteksi-os/{f=1} {if (f) print} /^# <<< blok-deteksi-os/{exit}' "$1"
 }
 
+# Daftar image dari `matrix: container:` sebuah workflow, satu per baris,
+# sudah diurutkan supaya bisa dibandingkan langsung antar workflow.
+_workflow_matrix_images() {
+    awk '
+        /^[[:space:]]*container:[[:space:]]*$/ { inlist = 1; next }
+        inlist && /^[[:space:]]*- / { sub(/^[[:space:]]*- /, ""); print; next }
+        inlist && NF { inlist = 0 }
+    ' "$1" | sort
+}
+
 # Jalankan osw dengan proxy yang tidak bisa dihubungi: memastikan jalur network
 # gagal dengan pesan jelas, tanpa benar-benar menyentuh internet.
 osw_run_blocked_network() {
@@ -1524,6 +1534,31 @@ test_release_workflow_present() {
     expect_file_contains "$ROOT_DIR/install.sh" 'ref_path="tags/' || return 1
 }
 
+# Matriks image CI dan rilis harus sinkron: image yang diuji saat tag harus
+# sama dengan yang diuji pada setiap push. Langkah dependensi juga harus
+# bercabang, karena image Fedora tidak punya apt-get.
+test_workflow_matrix_sync() {
+    local ci="$ROOT_DIR/.github/workflows/ci.yml"
+    local wf="$ROOT_DIR/.github/workflows/release.yml"
+    local ci_imgs="" wf_imgs=""
+    ci_imgs="$(_workflow_matrix_images "$ci")"
+    wf_imgs="$(_workflow_matrix_images "$wf")"
+    if [[ -z "$ci_imgs" ]]; then
+        _fail "matriks container ci.yml tidak ditemukan"
+        return 1
+    fi
+    if [[ "$ci_imgs" != "$wf_imgs" ]]; then
+        _fail "matriks ci.yml dan release.yml berbeda: ci=[$(tr '\n' ' ' <<<"$ci_imgs")] release=[$(tr '\n' ' ' <<<"$wf_imgs")]"
+        return 1
+    fi
+    if ! grep -qx "fedora:latest" <<<"$ci_imgs"; then
+        _fail "matriks container tidak memuat fedora:latest"
+        return 1
+    fi
+    expect_file_contains "$ci" "dnf install -y" || return 1
+    expect_file_contains "$wf" "dnf install -y" || return 1
+}
+
 # -----------------------------------------------------------------------------
 # Runner
 # -----------------------------------------------------------------------------
@@ -1744,6 +1779,7 @@ run_test "installer TMPDIR rusak -> mktemp"   test_installer_tmpdir_failure_stop
 run_test "installer tag 404 -> fallback main" test_installer_tag_404_falls_back_to_main
 run_test "installer tag error lain berhenti"  test_installer_tag_server_error_stops
 run_test "workflow rilis otomatis lengkap"    test_release_workflow_present
+run_test "matriks CI == matriks rilis"         test_workflow_matrix_sync
 
 printf '\n%d tes: %d lulus, %d gagal\n' "$TOTAL" "$PASSED" "$FAILED"
 
