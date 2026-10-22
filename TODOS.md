@@ -264,6 +264,22 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
   tabel perintah, contoh alur pemakaian, update/uninstall, config, tabel OS,
   tes, cara kerja CI + cara merilis versi baru, dan troubleshooting.
 
+Hasil run pertama workflow terpisah (push `5a426d1`, 2026-10-22) — **hijau**:
+
+- `CI` — https://github.com/Iky969/osw-wrapper-linux/actions/runs/39851572157
+  - `Lint (bash -n & shellcheck)`: sukses.
+  - `Tes (ubuntu:22.04)`, `Tes (ubuntu:24.04)`, `Tes (debian:bookworm)`:
+    sukses ketiganya.
+- `Release` — https://github.com/Iky969/osw-wrapper-linux/actions/runs/39851571901
+  - `Tes sebelum rilis (ubuntu:22.04)`, `(ubuntu:24.04)`, `(debian:bookworm)`:
+    sukses ketiganya.
+  - `Tag & rilis otomatis`: sukses. Langkah `Cek apakah tag sudah ada`
+    menemukan `v0.1.2` yang sudah terbit, checksum tag diverifikasi, Release
+    lama tidak dibuat ulang, dan langkah `Buat tag dan GitHub Release`
+    di-skip sesuai desain.
+- Biaya pilihan gate (b): pada push ke `main` matriks tes berjalan dua kali
+  (`CI` + `Release`); terlihat pada dua run di atas.
+
 Hasil run CI pertama (push `764b545`, 2026-10-21):
 
 - `bash -n` + `shellcheck -S warning` + `bash tests/run.sh` di runner lolos,
@@ -424,16 +440,18 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, dan 5 tes rilis (checksum,
   `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
   tunggal mengunduh sumber, kelengkapan workflow).
-- Smoke di 4 container nyata belum dijalankan; lihat `tests/smoke.sh` dan
+- `tests/run.sh` sudah berjalan di container `ubuntu:22.04`, `ubuntu:24.04`,
+  dan `debian:bookworm` lewat CI (run `5a426d1`). Smoke di container
+  Void/Alpine/Gentoo belum dijalankan; lihat `tests/smoke.sh` dan
   `docs/ADDING-OS.md`.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
   (lingkungan kerja ini Ubuntu 22.04, dijalankan sebagai root di container).
 - Mode pipe baru diuji pada jalur gagal (network diblokir via stub/ proxy);
   jalur unduh + install sukses belum diuji.
-- Workflow baru divalidasi lokal (YAML di-parse dengan PyYAML + actionlint
-  1.7.7 bersih, `shellcheck` 0 warning); matriks container belum pernah
-  dijalankan di GitHub saat commit ini dibuat, jadi hasil run pertama masih
-  harus diperiksa dan status "hijau" belum boleh ditandai.
+- Workflow divalidasi lokal (YAML di-parse dengan PyYAML + actionlint 1.7.7
+  bersih, `shellcheck` 0 warning) dan run pertama di GitHub hijau: `CI`
+  (lint + 3 container) dan `Release` (3 container + job rilis) untuk push
+  `5a426d1`, lihat tautan di bagian rilis otomatis.
 
 ## Riwayat langkah
 
@@ -471,6 +489,9 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   pembacaan `VERSION` upstream dipindah ke awal `do_self_update` dan dipakai
   bersama oleh dry-run dan jalur unduh; pesan `DRY:` tidak lagi menampilkan
   versi lokal tanpa keterangan (66 tes total, 66 lulus; shellcheck 0 warning).
+- `chore: catat hasil run CI hijau` — `TODOS.md`: status "hijau di GitHub"
+  ditandai setelah run `5a426d1` benar-benar selesai (CI + Release), termasuk
+  dua tautan run dan catatan job rilis yang di-skip karena tag sudah ada.
 - `ci: tambahkan workflow test dan gate rilis` — `ci.yml` dipecah: job `lint`
   (shellcheck v0.10.0 statis) + job `test` matriks `ubuntu:22.04`,
   `ubuntu:24.04`, `debian:bookworm`; rilis pindah ke `release.yml` dengan job
