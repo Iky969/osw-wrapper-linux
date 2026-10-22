@@ -22,7 +22,7 @@ Status kerja repo `osw`. Diperbarui 2026-10-22.
 | 6 | `os/gentoo.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--ask` default), autoremove pretend, tool opsional -> 3; **emerge nyata belum diuji** |
 | 7 | `os/arch.sh` | selesai (13 fungsi) | otomatis: mode `-n` (`--noconfirm`, bukan `-y`), autoremove; **pacman nyata belum diuji** |
 | 8 | Tes lintas OS (`smoke.sh`, `contract.sh`) | selesai | otomatis: kontrak 5 modul + smoke 75 perintah (stub) + smoke debian dry-run nyata; **4 container nyata belum dijalankan** |
-| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow + regresi installer file tunggal; **terverifikasi di GitHub**: CI membuat tag + Release `v0.1.0`, `v0.1.1`, `v0.1.2` (aset + checksum diperiksa) |
+| 9 | README, docs, rilis | selesai (+ CI rilis otomatis) | otomatis: tes checksum/VERSION/tag/workflow + regresi installer file tunggal; **terverifikasi di GitHub**: Release `v0.1.0`-`v0.1.5` (aset + checksum diperiksa; `v0.1.5` tag manual model B) |
 
 ## Detail Fase 0-2
 
@@ -128,8 +128,9 @@ Keputusan desain yang perlu diketahui:
   dari `/etc/os-release`.
 - Installer tidak memanggil `apt` sama sekali.
 
-Belum diuji: unduhan mode pipe yang sukses (butuh network + repo publik) dan
-instalasi di OS selain container Ubuntu ini.
+Mode pipe sukses sudah diuji 2026-10-22: `curl -fsSL .../releases/latest/download/install.sh | bash`
+(dari release `v0.1.5`) memasang 0.1.5 dari snapshot tag `v0.1.5` dengan
+HOME/XDG terisolasi. Belum diuji: instalasi di OS selain container Ubuntu ini.
 
 ## Detail Fase 4 — `os/void.sh`
 
@@ -312,6 +313,46 @@ Hasil run pertama workflow terpisah (push `5a426d1`, 2026-10-22) — **hijau**:
     di-skip sesuai desain.
 - Biaya pilihan gate (b): pada push ke `main` matriks tes berjalan dua kali
   (`CI` + `Release`); terlihat pada dua run di atas.
+
+Hasil rilis 0.1.5 (2026-10-22) — **hijau**:
+
+- `fix(detect)` `46a2ef4` dan `chore(release): v0.1.5` `0fe2add` di-push
+  bersama; tidak ada run CI terpisah untuk `46a2ef4`. Run CI untuk `0fe2add`
+  (https://github.com/Iky969/osw-wrapper-linux/actions/runs/39860084640)
+  **gagal** di langkah `Pasang dependensi` container `ubuntu:24.04`
+  (`archive.ubuntu.com` timeout, `apt-get install` exit 100) — kegagalan
+  infrastruktur, bukan tes; `Lint`, `Tes (ubuntu:22.04)`, dan
+  `Tes (debian:bookworm)` sukses.
+- `fix(install)` `ff60186` (mktemp/404) lolos CI
+  (https://github.com/Iky969/osw-wrapper-linux/actions/runs/39861018874):
+  `Lint` + 3 container sukses, 73 tes lulus.
+- `docs` `f06c05a` (CHANGELOG + aturan + backlog) lolos CI
+  (https://github.com/Iky969/osw-wrapper-linux/actions/runs/39864310055):
+  `Lint` + 3 container sukses.
+- Tag `v0.1.5` = `f06c05aaa20b36a96d1f08e055ffc53f0833e812`, dibuat manual
+  setelah CI hijau. **Catatan**: tag tidak menunjuk commit rilis `0fe2add`
+  karena CI commit itu gagal (infrastruktur) dan pohonnya belum memuat
+  perbaikan 0.1.5 (`fix(install)`); tag dipasang di commit terakhir yang
+  membawa `VERSION`/`DEFAULT_VERSION` 0.1.5 dan lolos CI, sehingga aset rilis
+  memuat seluruh perubahan 0.1.5 + `CHANGELOG.md`.
+- Run Release (event push, ref `v0.1.5`):
+  https://github.com/Iky969/osw-wrapper-linux/actions/runs/39864460025 —
+  `Tes sebelum rilis (ubuntu:22.04)`, `(ubuntu:24.04)`,
+  `(debian:bookworm)` success; `Tag & rilis otomatis` success dengan langkah
+  `Checkout pada commit tag`, `Validasi tag dan VERSION`,
+  `Verifikasi checksum installer`, dan `Terbitkan GitHub Release dari tag` —
+  semuanya success.
+- Release https://github.com/Iky969/osw-wrapper-linux/releases/tag/v0.1.5
+  terbit (bukan draft/prerelease) dengan aset `install.sh` (16.033 byte) dan
+  `install.sh.sha256` (77 byte); unduhan ulang lolos `sha256sum -c`
+  (`1713f293…`), aset berisi `DEFAULT_VERSION="0.1.5"`.
+- `osw self-update` dari instalasi 0.1.4 (aset Release v0.1.4, dipasang lewat
+  file tunggal) berhasil ke 0.1.5: installer tag diunduh, checksum
+  diverifikasi, snapshot `v0.1.5` diunduh, config dan `osw version` menjadi
+  0.1.5; hash `bin/osw` terpasang sama dengan `git show v0.1.5:bin/osw`.
+- Mode pipe `curl -fsSL .../releases/latest/download/install.sh | bash`
+  diuji dengan HOME/XDG terisolasi: memasang 0.1.5 dan mengunduh snapshot
+  tag `v0.1.5` (bukan fallback `main`).
 
 Hasil rilis 0.1.4 / model B (2026-10-22) — **hijau**:
 
@@ -546,21 +587,23 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ### 5. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 70 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+- `tests/run.sh` berisi 73 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
   self-update, 5 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
   11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, 3 tes deteksi OS
-  (`ID`/`ID_LIKE`, blok identik, unknown), dan 5 tes rilis (checksum,
+  (`ID`/`ID_LIKE`, blok identik, unknown), 5 tes rilis (checksum,
   `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
-  tunggal mengunduh sumber, kelengkapan workflow).
+  tunggal mengunduh sumber, kelengkapan workflow), dan 3 tes installer
+  (`TMPDIR` rusak -> `mktemp`, fallback tag 404, error non-404 berhenti).
 - `tests/run.sh` sudah berjalan di container `ubuntu:22.04`, `ubuntu:24.04`,
-  dan `debian:bookworm` lewat CI (`5a426d1`, `15f82c4`). Jalur `push` tag
-  `release.yml` sudah diuji nyata untuk `v0.1.4` (run `39856433147`). Smoke di
+  dan `debian:bookworm` lewat CI (`5a426d1`, `15f82c4`, `f06c05a`). Jalur
+  `push` tag `release.yml` sudah diuji nyata untuk `v0.1.4` (run
+  `39856433147`) dan `v0.1.5` (run `39864460025`). Smoke di
   container Void/Alpine/Gentoo belum dijalankan; lihat `tests/smoke.sh` dan
   `docs/ADDING-OS.md`.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
   (lingkungan kerja ini Ubuntu 22.04, dijalankan sebagai root di container).
-- Mode pipe baru diuji pada jalur gagal (network diblokir via stub/ proxy);
-  jalur unduh + install sukses belum diuji.
+- Mode pipe jalur sukses sudah diuji 2026-10-22 (release `v0.1.5`, HOME/XDG
+  terisolasi); jalur gagal tetap diuji dengan stub/`OSW_UPSTREAM_REPO` palsu.
 - Workflow divalidasi lokal (YAML di-parse dengan PyYAML + actionlint 1.7.7
   bersih, `shellcheck` 0 warning) dan run pertama di GitHub hijau: `CI`
   (lint + 3 container) dan `Release` (3 container + job rilis) untuk push
@@ -568,6 +611,10 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `docs: tambah CHANGELOG.md dan aturan pencatatan di AGENTS.md` —
+  `CHANGELOG.md` (10 baris `[NOTICE]`, 0.1.0-0.1.5), aturan wajib changelog di
+  `AGENTS.md`, dan backlog v0.2 `osw changelog` di `TODOS.md`. Tag `v0.1.5`
+  ditempatkan di commit ini; bukti rilis di bagian "Hasil rilis 0.1.5".
 - `chore(release): v0.1.5` — `VERSION` dan `DEFAULT_VERSION` menjadi 0.1.5,
   `install.sh.sha256` dihitung ulang (`f34ae015…`); `sha256sum -c` lulus,
   `bash -n` OK, actionlint 1.7.7 bersih, shellcheck 0.10.0 0 warning, dan tes
