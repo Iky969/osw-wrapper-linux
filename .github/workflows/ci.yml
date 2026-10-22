@@ -24,11 +24,18 @@ jobs:
         run: bash -n bin/osw install.sh os/*.sh tests/*.sh
 
       - name: ShellCheck 0.10.0 (binary statis)
+        env:
+          # SHA-256 shellcheck-v0.10.0.linux.x86_64.tar.xz (2.404.716 byte).
+          # Rilis v0.10.0 tidak menerbitkan file checksum; nilai ini dihitung
+          # dari aset resmi GitHub dan cocok dengan lock Pants 2.32 serta
+          # multitool.lock.json Selenium. Lihat TODOS.md.
+          SHELLCHECK_SHA256: 6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87
         run: |
           set -euo pipefail
           version="0.10.0"
           url="https://github.com/koalaman/shellcheck/releases/download/v${version}/shellcheck-v${version}.linux.x86_64.tar.xz"
           curl -fsSL --max-time 60 -o /tmp/shellcheck.tar.xz "$url"
+          printf '%s  %s\n' "$SHELLCHECK_SHA256" /tmp/shellcheck.tar.xz | sha256sum -c -
           tar -xJf /tmp/shellcheck.tar.xz -C /tmp
           /tmp/shellcheck-v${version}/shellcheck --version
           /tmp/shellcheck-v${version}/shellcheck -S warning \

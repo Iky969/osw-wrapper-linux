@@ -254,6 +254,20 @@ Selesai untuk bagian yang bisa dikerjakan tanpa push:
   - Perlu `permissions: contents: write` pada job rilis; branch protection
     harus mengizinkan bot Actions push commit checksum, atau jalankan manual
     lewat `workflow_dispatch`.
+- **Verifikasi checksum shellcheck** (2026-10-22): langkah `ShellCheck 0.10.0`
+  di `ci.yml` menjalankan `printf '%s  %s\n' "$SHELLCHECK_SHA256" /tmp/shellcheck.tar.xz | sha256sum -c -`
+  sebelum ekstraksi, jadi hash yang tidak cocok menggagalkan job. Nilai yang
+  dipakai: `6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87`
+  (2.404.716 byte). Rilis v0.10.0 **tidak menerbitkan file checksum/digest**
+  (7 aset tanpa `SHA256SUMS`, API aset tanpa field `digest`), jadi nilai ini
+  dihitung dari aset resmi
+  `https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz`
+  dan dicocokkan dengan dua pin independen: Pants 2.32
+  (`known_versions`: `v0.10.0|linux_x86_64|6c881ab…|2404716`,
+  `https://www.pantsbuild.org/2.32/reference/subsystems/shellcheck`) dan
+  `multitool.lock.json` Selenium 4.40.0
+  (`https://chromium.googlesource.com/external/github.com/SeleniumHQ/selenium/+/refs/tags/selenium-4.40.0/multitool.lock.json`).
+  `release.yml` tidak punya job lint, jadi hanya satu pekerjaan yang berubah.
 - `install.sh.sha256` di-commit di root repo supaya tag pertama langsung
   punya checksum dan `osw self-update` tidak pernah melihat tag tanpa
   `.sha256`.
