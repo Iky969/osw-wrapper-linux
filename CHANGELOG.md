@@ -1,3 +1,5 @@
+[NOTICE] update 0.1.6 ci: tambahkan fedora:latest ke matriks tes
+[NOTICE] update 0.1.6 feat: dukungan Fedora dengan dnf
 [NOTICE] update 0.1.5 fix deteksi arch: ID_LIKE dan archarm
 [NOTICE] update 0.1.5 fix install.sh: penanganan mktemp dan fallback tag hanya untuk 404
 [NOTICE] update 0.1.4 ci: rilis hanya dipicu push tag v* dan verifikasi checksum installer
