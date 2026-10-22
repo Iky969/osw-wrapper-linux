@@ -550,6 +550,13 @@ Status 2026-10-22: modul + tes + CI selesai, menunggu rilis 0.1.6.
   (terbukti gagal kalau `fedora:latest` dihapus dari satu file), plus menuntut
   `fedora:latest` dan langkah `dnf install -y` ada di keduanya.
 - `.shellcheckrc` tidak berubah (tanpa `disable=` baru).
+- CI pertama dengan `fedora:latest` (run `39870893747`, commit `12787af`)
+  **gagal**: 2 tes bergantung host Fedora. `detect menulis config` memakai
+  regex family tanpa `fedora`; `fedora fallback ke dnf4` masih menemukan
+  `dnf5` asli di `/usr/bin`. Diperbaiki di commit tes berikutnya: regex
+  ditambah `fedora`, dan fallback diuji dengan PATH sempit (stub `dnf` +
+  utilitas minimal) supaya `dnf5` host tidak ikut terpilih. Job `Lint` dan
+  tiga container Debian/Ubuntu tetap hijau pada run itu.
 
 ### Tes
 
@@ -704,6 +711,11 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `test(fedora): perbaiki tes yang bergantung host Fedora` — CI `fedora:latest`
+  run `39870893747` gagal di `detect menulis config` (regex family belum
+  memuat `fedora`) dan `fedora fallback ke dnf4` (`dnf5` asli host menang atas
+  stub). Regex diperluas; fallback diuji dengan PATH sempit berisi stub `dnf`
+  + utilitas minimal sehingga `dnf5` tidak ditemukan. 80 tes lulus lokal.
 - `ci: tambahkan fedora:latest ke matriks tes` — `fedora:latest` masuk
   matriks `ci.yml` + `release.yml` (sinkron), langkah dependensi bercabang
   `apt-get`/`dnf`, tes `matriks CI == matriks rilis` ditambahkan (80 tes,

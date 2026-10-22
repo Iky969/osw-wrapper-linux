@@ -321,6 +321,23 @@ STUB
     OSW_TEST_PATH="$dir:$TEST_PATH"
 }
 
+# PATH untuk mensimulasikan sistem tanpa dnf5: hanya stub dnf + utilitas
+# minimal. Fedora 41+ selalu punya dnf5 di /usr/bin, jadi PATH penuh tidak
+# bisa dipakai menguji fallback ke dnf.
+_dnf4_only_path() {
+    local dir="$SB/dnf4-core"
+    local tool=""
+    mkdir -p "$dir"
+    for tool in bash readlink dirname id; do
+        ln -sf "$(command -v "$tool")" "$dir/$tool"
+    done
+    # Non-root: _priv memakai sudo/doas. Shim ini hanya meneruskan perintah
+    # (tidak benar-benar menaikkan hak akses); baris DRY tetap diuji.
+    printf '#!/bin/bash\nexec "$@"\n' >"$dir/sudo"
+    chmod +x "$dir/sudo"
+    printf '%s\n' "$SB/dnf-bin:$dir"
+}
+
 # Jalankan binary osw dengan PATH stub dnf; DNF_LOG diteruskan ke stub.
 bin_run_dnf() {
     local bin="$1"
@@ -463,7 +480,7 @@ test_detect_writes_config() {
     expect_rc 0 || return 1
     expect_file "$SB/cfg/osw/os.conf" || return 1
     expect_file_lines "$SB/cfg/osw/os.conf" 4 || return 1
-    expect_file_matches "$SB/cfg/osw/os.conf" '^OS=(debian|void|alpine|gentoo|arch|unknown)$' || return 1
+    expect_file_matches "$SB/cfg/osw/os.conf" '^OS=(debian|void|alpine|gentoo|arch|fedora|unknown)$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^OS_NAME=.+$' || return 1
     expect_file_matches "$SB/cfg/osw/os.conf" '^INSTALLED_AT=.+$' || return 1
     expect_file_contains "$SB/cfg/osw/os.conf" "VERSION=$TEST_VERSION" || return 1
@@ -1251,9 +1268,11 @@ test_fedora_dry_run_prefers_dnf5() {
 
 test_fedora_fallback_dnf4() {
     # Hanya dnf (Python) tersedia: semua aksi tetap memakai flag yang sama.
+    # PATH dipersempit supaya dnf5 asli milik host Fedora tidak ikut menang.
     _make_dnf_stub dnf rpm
     installer_run --os fedora --no-path-hint
     expect_rc 0 || return 1
+    OSW_TEST_PATH="$(_dnf4_only_path)"
 
     bin_run_dnf "$SB/bin/osw" -n install neovim
     expect_rc 0 || return 1
