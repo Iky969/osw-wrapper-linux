@@ -298,6 +298,30 @@ Hasil run pertama workflow terpisah (push `5a426d1`, 2026-10-22) — **hijau**:
 - Biaya pilihan gate (b): pada push ke `main` matriks tes berjalan dua kali
   (`CI` + `Release`); terlihat pada dua run di atas.
 
+Hasil rilis 0.1.3 (push `868f21d`, 2026-10-22) — **hijau**:
+
+- `CI` — https://github.com/Iky969/osw-wrapper-linux/actions/runs/39853897169
+  - `Lint (bash -n & shellcheck)`: sukses (termasuk langkah checksum
+    shellcheck).
+  - `Tes (ubuntu:22.04)`, `Tes (ubuntu:24.04)`, `Tes (debian:bookworm)`:
+    sukses ketiganya.
+- `Release` — https://github.com/Iky969/osw-wrapper-linux/actions/runs/39853897286
+  - `Tes sebelum rilis (ubuntu:22.04)`, `(ubuntu:24.04)`, `(debian:bookworm)`:
+    sukses ketiganya.
+  - `Tag & rilis otomatis`: sukses. Langkah: `Baca dan validasi VERSION`
+    sukses; `Cek apakah tag sudah ada` sukses (belum ada); `Pastikan checksum
+    tag lama masih cocok` skipped; `Pastikan Release untuk tag yang sudah ada`
+    skipped; `Buat tag dan GitHub Release` sukses.
+- Tag `v0.1.3` = `868f21dc493eda5ed1f7d8a28f74ec058c855268`, dibuat oleh job
+  rilis (`gh release create --target`). Release:
+  https://github.com/Iky969/osw-wrapper-linux/releases/tag/v0.1.3 — aset
+  `install.sh` (13.045 byte) dan `install.sh.sha256` (77 byte); unduhan aset
+  lolos `sha256sum -c` dan `DEFAULT_VERSION` di aset = 0.1.3.
+- Jalur **push tag** tidak dapat diuji: tag sudah dibuat otomatis oleh run
+  push `main`, dan aturan melarang memindahkan/menimpa tag. Percobaan
+  `workflow_dispatch` pada ref `v0.1.3` ditolak token (HTTP 403, butuh
+  `actions: write`), jadi tidak ada run ber-event tag.
+
 Hasil run CI pertama (push `764b545`, 2026-10-21):
 
 - `bash -n` + `shellcheck -S warning` + `bash tests/run.sh` di runner lolos,
