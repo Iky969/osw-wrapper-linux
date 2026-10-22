@@ -80,6 +80,7 @@ EOF
 # -----------------------------------------------------------------------------
 OS_RELEASE_FILE="${OSW_OS_RELEASE:-/etc/os-release}"
 
+# >>> blok-deteksi-os — salinan identik di bin/osw dan install.sh (diuji tests/run.sh) >>>
 _os_release_value() {
     local key="$1"
     local value=""
@@ -90,17 +91,42 @@ _os_release_value() {
     printf '%s\n' "$value"
 }
 
+# Urutan pencocokan: ID dulu, lalu setiap token ID_LIKE. Hanya token di tabel
+# ini yang dipetakan; turunan lain bisa memakai package manager/repo berbeda.
+OSW_FAMILY_TABLE='debian:debian ubuntu:debian void:void alpine:alpine gentoo:gentoo arch:arch archarm:arch'
+
+# token -> family; rc 1 kalau token tidak ada di tabel.
+_osw_family_for() {
+    local token="$1"
+    local pair=""
+    local -a pairs=()
+    [[ -n "$token" ]] || return 1
+    read -r -a pairs <<<"$OSW_FAMILY_TABLE"
+    for pair in "${pairs[@]}"; do
+        if [[ "${pair%%:*}" == "$token" ]]; then
+            printf '%s\n' "${pair#*:}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 detect_os() {
-    local os_id=""
-    os_id="$(_os_release_value ID)"
-    case "$os_id" in
-        alpine) printf 'alpine\n' ;;
-        void) printf 'void\n' ;;
-        gentoo | funtoo) printf 'gentoo\n' ;;
-        debian | ubuntu | mint | linuxmint | pop | kali) printf 'debian\n' ;;
-        arch | manjaro | endeavouros) printf 'arch\n' ;;
-        *) printf 'unknown\n' ;;
-    esac
+    local family=""
+    local token=""
+    local -a likes=()
+    if family="$(_osw_family_for "$(_os_release_value ID)")"; then
+        printf '%s\n' "$family"
+        return 0
+    fi
+    read -r -a likes <<<"$(_os_release_value ID_LIKE)"
+    for token in "${likes[@]}"; do
+        if family="$(_osw_family_for "$token")"; then
+            printf '%s\n' "$family"
+            return 0
+        fi
+    done
+    printf 'unknown\n'
 }
 
 # Nama tampilan saja; tidak pernah dipakai memilih modul.
@@ -115,6 +141,13 @@ detect_os_name() {
     fi
     printf '%s\n' "$name"
 }
+
+# Pesan seragam saat family tidak dikenali; menyebut nilai yang terbaca.
+detect_os_unrecognized() {
+    printf 'OS tidak dikenali (ID=%s, ID_LIKE=%s)' \
+        "$(_os_release_value ID)" "$(_os_release_value ID_LIKE)"
+}
+# <<< blok-deteksi-os <<<
 
 # -----------------------------------------------------------------------------
 # 4. Parser argumen
@@ -259,6 +292,9 @@ OS_NAME="$DETECTED_NAME"
 case "$OS" in
     debian | void | alpine | gentoo | arch) ;;
     *)
+        if [[ "$OS" == "unknown" && -z "$OS_OVERRIDE" ]]; then
+            die "$(detect_os_unrecognized). OS yang didukung: debian, void, alpine, gentoo, arch."
+        fi
         die "OS tidak didukung: $OS. OS yang didukung: debian, void, alpine, gentoo, arch."
         ;;
 esac

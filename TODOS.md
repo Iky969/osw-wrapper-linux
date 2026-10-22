@@ -1,6 +1,6 @@
 # TODOS.md
 
-Status kerja repo `osw`. Diperbarui 2026-10-21.
+Status kerja repo `osw`. Diperbarui 2026-10-22.
 
 ## Catatan sumber acuan
 
@@ -64,8 +64,11 @@ Selesai. Implementasi mengikuti blueprint poin 1-11:
 
 1. Header `set -euo pipefail`; lokasi sumber lewat `BASH_SOURCE` + `readlink -f`.
 2. `CONF_DIR`, `DATA_DIR`, `BIN_DIR`, `CONF` identik dengan `bin/osw`.
-3. `detect_os` sama dengan dispatcher: alpine, void, gentoo/funtoo,
-   debian/ubuntu/mint/linuxmint/pop/kali, arch/manjaro/endeavouros, else unknown.
+3. `detect_os` memakai blok identik dengan dispatcher. Sejak perbaikan deteksi
+   (v0.1.5): cocokkan `ID` dulu, lalu setiap token `ID_LIKE` terhadap tabel
+   `debian, ubuntu, void, alpine, gentoo, arch, archarm`; token lain di luar
+   tabel tidak dipetakan dan family tak dikenal ditolak (exit 1) dengan pesan
+   `OS tidak dikenali (ID=..., ID_LIKE=...)`.
 4. Parser: `--os`, `--os=`, `--redetect`, `--prefix`, `--no-path-hint`,
    `--uninstall`, `-h/--help`. Tambahan `-y/--yes` khusus `--uninstall` supaya
    bisa dipakai non-interaktif.
@@ -498,19 +501,35 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   hanya aktif kalau file `VERSION` tidak ada di sebelah binary (instalasi file
   tunggal), dan itu tetap item terbuka, bukan diubah di commit rilis.
 
-### 4. Deteksi OS terduplikasi (terbuka)
+### 4. Deteksi OS terduplikasi (selesai di v0.1.5)
 
-- `detect_os`/`detect_os_name` ada di `bin/osw` dan `install.sh` dengan daftar
-  family yang sama. Risikonya bisa berbeda tanpa ketahuan; `tests/run.sh` baru
-  membandingkan perilaku lewat beberapa ID, belum seluruh daftar. Belum
-  diperbaiki karena butuh keputusan arsitektur (installer harus tetap bisa
-  berdiri sendiri tanpa `bin/osw`).
+- Bug nyata dari perangkat Arch Linux ARM: `/etc/os-release` berisi
+  `ID=archarm` + `ID_LIKE=arch`, sedangkan deteksi lama hanya melihat `ID`,
+  sehingga hasilnya `unknown` dan installer menolak.
+- Perbaikan: `detect_os` di `bin/osw` dan `install.sh` sekarang berasal dari
+  blok `# >>> blok-deteksi-os` yang **identik byte-per-byte** dan diuji oleh
+  `tests/run.sh` (`blok deteksi bin/osw == install.sh`). Tabel
+  `OSW_FAMILY_TABLE` hanya memuat `debian, ubuntu, void, alpine, gentoo, arch,
+  archarm`; pencocokan urut `ID` lalu token `ID_LIKE`. Installer tetap bisa
+  berdiri sendiri (tidak butuh file bersama tambahan di mode pipe).
+- Kontrak baru di `tests/run.sh` (fixture `OSW_OS_RELEASE`):
+  `ID=archarm ID_LIKE=arch` → arch, `ID=arch` → arch,
+  `ID=unknownX ID_LIKE=debian` → debian, `ID=ubuntu` → debian,
+  `ID=alpine ID_LIKE=arch` → alpine (ID menang), `ID=fedora ID_LIKE=rhel` →
+  unknown + exit non-nol + pesan menyebut `ID` dan `ID_LIKE`. Untuk setiap
+  fixture `bin/osw` dan `install.sh` harus memberi hasil yang sama.
+- Turunan tetap terdeteksi lewat `ID_LIKE` (mis. Mint `ID_LIKE="ubuntu debian"`,
+  Manjaro `ID_LIKE=arch`); mint/pop/kali/manjaro/endeavouros/funtoo tidak lagi
+  dicantumkan sebagai `ID` eksplisit karena sudah tercakup `ID_LIKE`.
+- `osw detect` tidak lagi menulis `OS=unknown` ke config: family tak dikenal →
+  pesan error + exit 1, config lama dibiarkan.
 
 ### 5. Cakupan uji belum lengkap
 
-- `tests/run.sh` berisi 67 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
+- `tests/run.sh` berisi 70 tes hermetik: 19 tes Fase 0-2, 1 tes regresi
   self-update, 5 tes regresi `_run`/`RETURN` trap/dry-run, 21 tes Fase 3,
-  11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, dan 5 tes rilis (checksum,
+  11 tes modul Fase 4-7, 5 tes kontrak/smoke Fase 8, 3 tes deteksi OS
+  (`ID`/`ID_LIKE`, blok identik, unknown), dan 5 tes rilis (checksum,
   `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
   tunggal mengunduh sumber, kelengkapan workflow).
 - `tests/run.sh` sudah berjalan di container `ubuntu:22.04`, `ubuntu:24.04`,
@@ -529,6 +548,13 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 
 ## Riwayat langkah
 
+- `fix(detect): cocokkan ID_LIKE untuk keluarga arch dan turunannya` — bug
+  perangkat Arch Linux ARM (`ID=archarm`, `ID_LIKE=arch`): `bin/osw` dan
+  `install.sh` kini memakai blok deteksi identik (tabel `ID`/`ID_LIKE`), urut
+  `ID` lalu token `ID_LIKE`, hanya token di daftar eksplisit yang dipetakan,
+  dan pesan `OS tidak dikenali (ID=..., ID_LIKE=...)`. 3 tes kontrak baru
+  (70 tes total, 70 lulus); tes baru terbukti gagal pada kode sebelumnya
+  (67 lulus, 3 gagal di salinan `HEAD`).
 - `chore: tambahkan AGENTS.md, TODOS.md, tests/run.sh` — harness hermetik + 19
   tes Fase 0-2 (19 lulus).
 - `feat(fase3): install.sh` — installer + 17 tes Fase 3 (36 tes total, 36 lulus).

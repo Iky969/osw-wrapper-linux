@@ -116,6 +116,40 @@ conf_os_name() {
     _sandbox_env bash -c '. "$1" >/dev/null 2>&1; printf "%s" "${OS_NAME:-}"' _ "$1"
 }
 
+# Baca kembali family OS dari config.
+conf_os() {
+    _sandbox_env bash -c '. "$1" >/dev/null 2>&1; printf "%s" "${OS:-}"' _ "$1"
+}
+
+# Tulis os-release dengan ID_LIKE (opsional; kosong = tanpa baris ID_LIKE).
+write_os_release_like() {
+    local path="$1"
+    local id="$2"
+    local like="$3"
+    local pretty="$4"
+    {
+        printf 'ID=%s\n' "$id"
+        if [[ -n "$like" ]]; then
+            printf 'ID_LIKE="%s"\n' "$like"
+        fi
+        printf "PRETTY_NAME='%s'\n" "$pretty"
+    } >"$path"
+}
+
+# Jalankan osw dengan file os-release palsu (hook OSW_OS_RELEASE).
+osw_run_osrel() {
+    local rel="$1"
+    shift
+    _sandbox_env OSW_OS_RELEASE="$rel" bash "$OSW" "$@" >"$OUT" 2>"$ERR"
+    RC=$?
+    return 0
+}
+
+# Ambil blok deteksi (tabel + logika) dari sebuah file.
+extract_detect_block() {
+    awk '/^# >>> blok-deteksi-os/{f=1} {if (f) print} /^# <<< blok-deteksi-os/{exit}' "$1"
+}
+
 # Jalankan osw dengan proxy yang tidak bisa dihubungi: memastikan jalur network
 # gagal dengan pesan jelas, tanpa benar-benar menyentuh internet.
 osw_run_blocked_network() {
@@ -1253,6 +1287,89 @@ run_test() {
     ERR=""
 }
 
+# -----------------------------------------------------------------------------
+# Deteksi OS: ID dulu, lalu token ID_LIKE
+# -----------------------------------------------------------------------------
+# Format: ID|ID_LIKE|family yang diharapkan ("unknown" = harus ditolak).
+DETECT_FIXTURES=(
+    "archarm|arch|arch"
+    "arch||arch"
+    "unknownX|debian|debian"
+    "ubuntu||debian"
+    "alpine|arch|alpine"
+    "fedora|rhel|unknown"
+)
+
+# Kontrak: untuk setiap fixture, bin/osw dan install.sh harus sama.
+test_detect_contract_id_like() {
+    local rel="$SB/os-release"
+    local entry="" id="" like="" want="" label=""
+    local osw_family="" inst_family=""
+    for entry in "${DETECT_FIXTURES[@]}"; do
+        IFS='|' read -r id like want <<<"$entry"
+        label="ID=$id ID_LIKE=$like"
+        write_os_release_like "$rel" "$id" "$like" "$label"
+
+        rm -rf "$SB/cfg"
+        osw_run_osrel "$rel" detect
+        osw_family="unknown"
+        [[ -f "$SB/cfg/osw/os.conf" ]] && osw_family="$(conf_os "$SB/cfg/osw/os.conf")"
+        if [[ "$want" == "unknown" ]]; then
+            [[ "$RC" -ne 0 ]] || { _fail "bin/osw: $label seharusnya exit non-nol"; return 1; }
+            expect_err "OS tidak dikenali (ID=$id, ID_LIKE=$like)" || return 1
+        else
+            [[ "$RC" -eq 0 ]] || { _fail "bin/osw: $label exit $RC, seharusnya 0"; return 1; }
+            [[ "$osw_family" == "$want" ]] \
+                || { _fail "bin/osw: $label -> $osw_family, seharusnya $want"; return 1; }
+        fi
+
+        rm -rf "$SB/cfg"
+        installer_run_osrel "$rel" --redetect --no-path-hint
+        inst_family="unknown"
+        [[ -f "$SB/cfg/osw/os.conf" ]] && inst_family="$(conf_os "$SB/cfg/osw/os.conf")"
+        if [[ "$want" == "unknown" ]]; then
+            [[ "$RC" -ne 0 ]] || { _fail "install.sh: $label seharusnya exit non-nol"; return 1; }
+            expect_err "OS tidak dikenali (ID=$id, ID_LIKE=$like)" || return 1
+        else
+            [[ "$RC" -eq 0 ]] || { _fail "install.sh: $label exit $RC, seharusnya 0"; return 1; }
+            [[ "$inst_family" == "$want" ]] \
+                || { _fail "install.sh: $label -> $inst_family, seharusnya $want"; return 1; }
+        fi
+
+        [[ "$osw_family" == "$inst_family" ]] \
+            || { _fail "$label: bin/osw=$osw_family, install.sh=$inst_family"; return 1; }
+    done
+}
+
+# Tabel + logika deteksi harus identik, bukan dua salinan yang bisa menyimpang.
+test_detect_block_identical() {
+    local a="" b=""
+    a="$(extract_detect_block "$OSW")"
+    b="$(extract_detect_block "$INSTALLER")"
+    if [[ -z "$a" || -z "$b" ]]; then
+        _fail "blok deteksi tidak ditemukan di bin/osw atau install.sh"
+        return 1
+    fi
+    if [[ "$a" != "$b" ]]; then
+        _fail "blok deteksi bin/osw dan install.sh berbeda"
+        return 1
+    fi
+    if [[ "$a" != *"OSW_FAMILY_TABLE="* || "$a" != *"ID_LIKE"* ]]; then
+        _fail "blok deteksi tidak memuat tabel family / pembacaan ID_LIKE"
+        return 1
+    fi
+}
+
+# Family tak dikenal tidak boleh ditulis ke config sebagai OS=unknown.
+test_detect_unknown_writes_no_config() {
+    write_os_release_like "$SB/os-release" "fedora" "rhel" "Fedora Linux"
+    osw_run_osrel "$SB/os-release" detect
+    expect_rc 1 || return 1
+    expect_absent "$SB/cfg/osw/os.conf" || return 1
+    expect_err "ID=fedora" || return 1
+    expect_err "ID_LIKE=rhel" || return 1
+}
+
 printf 'osw test suite (%s)\n\n' "$ROOT_DIR"
 printf -- '--- Fase 0-2: dispatcher & modul debian ---\n'
 run_test "help tanpa config"                 test_help_without_config
@@ -1329,6 +1446,11 @@ run_test "contract menolak modul tidak lengkap" test_contract_rejects_missing_fu
 run_test "contract menolak set -e di modul"   test_contract_rejects_own_parser
 run_test "smoke --stub semua modul"           test_smoke_stub_all_modules
 run_test "smoke debian (dry-run asli)"        test_smoke_real_debian
+
+printf -- '\n--- Deteksi OS: ID lalu ID_LIKE ---\n'
+run_test "deteksi ID_LIKE (kontrak osw == installer)" test_detect_contract_id_like
+run_test "blok deteksi bin/osw == install.sh"  test_detect_block_identical
+run_test "deteksi unknown tidak menulis config" test_detect_unknown_writes_no_config
 
 printf -- '\n--- Rilis: checksum, tag, CI ---\n'
 run_test "checksum install.sh cocok"          test_installer_checksum_matches

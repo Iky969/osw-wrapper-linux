@@ -5,14 +5,19 @@ Satu modul = satu family package manager. Satu modul = satu commit
 
 ## 1. Tentukan family dan pemetaannya
 
-Pilih nama family yang sama dengan nama file: `os/<family>.sh`. Petakan `ID`
-dari `/etc/os-release` ke family itu. Contoh: `linuxmint` dan `pop` masuk
-family `debian` karena memakai apt.
+Pilih nama family yang sama dengan nama file: `os/<family>.sh`. Petakan token
+dari `/etc/os-release` (`ID` dulu, lalu setiap token `ID_LIKE`) ke family itu.
+Contoh: `ID=archarm` dengan `ID_LIKE=arch` masuk family `arch`.
 
-Tambahkan pemetaan di **dua tempat** (harus sama persis):
+Tambahkan token ke `OSW_FAMILY_TABLE` di blok `# >>> blok-deteksi-os` pada
+**dua file**, dan salin blok itu utuh supaya tetap identik:
 
-- `bin/osw` → `detect_os()`
-- `install.sh` → `detect_os()`
+- `bin/osw`
+- `install.sh`
+
+Blok itu memuat tabel, `detect_os()`, dan pesan `OS tidak dikenali`; `tests/run.sh`
+membandingkan kedua salinan byte-per-byte, jadi jangan mengubah salah satunya
+saja. Token di luar tabel tidak pernah dipetakan secara otomatis.
 
 Tambahkan juga family baru ke daftar yang diterima di `install.sh`:
 

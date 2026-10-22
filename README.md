@@ -182,21 +182,30 @@ VERSION=0.1.2
 ```
 
 - `OS` adalah *family* yang dipakai memilih `os/$OS.sh`. Nilainya hanya
-  dideteksi dari `ID` di `/etc/os-release` saat config belum ada atau dengan
+  dideteksi dari `/etc/os-release` saat config belum ada atau dengan
   `--redetect`/`osw detect`; selama config ada, nilai tersimpan dipakai.
+  Urutan pencocokan: `ID` dulu, lalu setiap token `ID_LIKE`. Contoh:
+  `ID=archarm` + `ID_LIKE=arch` → family `arch`.
 - `OS_NAME` hanya untuk tampilan (`PRETTY_NAME`, fallback `NAME`, lalu
   `unknown`), di-escape dengan `printf '%q'`, dan tidak pernah dipakai memilih
   modul.
 
 ## OS yang didukung
 
-| Family | `ID` di os-release | Package manager | Modul |
+| Family | Token yang dipetakan (`ID`, lalu `ID_LIKE`) | Package manager | Modul |
 | --- | --- | --- | --- |
-| debian | debian, ubuntu, mint, linuxmint, pop, kali | apt/dpkg | `os/debian.sh` |
+| debian | debian, ubuntu | apt/dpkg | `os/debian.sh` |
 | void | void | XBPS | `os/void.sh` |
 | alpine | alpine | apk | `os/alpine.sh` |
-| gentoo | gentoo, funtoo | Portage | `os/gentoo.sh` |
-| arch | arch, manjaro, endeavouros | pacman | `os/arch.sh` |
+| gentoo | gentoo | Portage | `os/gentoo.sh` |
+| arch | arch, archarm | pacman | `os/arch.sh` |
+
+Hanya token di tabel itu yang dipetakan. Turunan yang mencantumkan token
+induknya di `ID_LIKE` ikut terdeteksi (mis. Linux Mint `ID=mint` +
+`ID_LIKE="ubuntu debian"` → `debian`; Manjaro `ID_LIKE=arch` → `arch`). Token
+lain di `ID_LIKE` sengaja **tidak** diterima karena bisa memakai package
+manager atau repo berbeda; OS seperti itu ditolak dengan pesan
+`OS tidak dikenali (ID=..., ID_LIKE=...)`.
 
 Pemetaan perintah:
 

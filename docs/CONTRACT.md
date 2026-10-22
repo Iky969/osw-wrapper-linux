@@ -114,7 +114,9 @@ dan config tetap XDG karena dispatcher menghitungnya dari XDG.
 
 - `OSW_OS_RELEASE` (default `/etc/os-release`) mengganti file os-release yang
   dibaca `bin/osw` dan `install.sh`, supaya deteksi bisa diuji tanpa menyentuh
-  `/etc`.
+  `/etc`. Deteksi memakai blok `# >>> blok-deteksi-os` yang identik di kedua
+  file (tabel `ID`/`ID_LIKE` + `detect_os()`); `tests/run.sh` membandingkan
+  kedua salinan dan menguji kedua entry point dengan fixture yang sama.
 - `OSW_UPSTREAM_REPO` / `OSW_UPSTREAM_REF` mengganti repo/ref unduhan installer
   mode pipe (default ref: tag `v<DEFAULT_VERSION>`, fallback `main`).
   `self-update` hanya memakai `OSW_UPSTREAM_REPO`; installernya selalu diambil
