@@ -300,6 +300,30 @@ Hasil run pertama workflow terpisah (push `5a426d1`, 2026-10-22) — **hijau**:
 - Biaya pilihan gate (b): pada push ke `main` matriks tes berjalan dua kali
   (`CI` + `Release`); terlihat pada dua run di atas.
 
+Hasil rilis 0.1.4 / model B (2026-10-22) — **hijau**:
+
+- Commit versi `15f82c4` (`chore(release): v0.1.4`), CI:
+  https://github.com/Iky969/osw-wrapper-linux/actions/runs/39856297360 —
+  `Lint` success, `Tes (ubuntu:22.04)`, `(ubuntu:24.04)`,
+  `(debian:bookworm)` success. Tidak ada run Release pada push `main`
+  (model B terbukti: push `491c948` dan `15f82c4` hanya memicu `CI`).
+- Tag dibuat manusia setelah CI hijau: `v0.1.4` =
+  `15f82c4827a3966cd9cc8e612576b497c59a4eec`.
+- Run Release yang dipicu push tag (`event: push`, ref `v0.1.4`):
+  https://github.com/Iky969/osw-wrapper-linux/actions/runs/39856433147 —
+  `Tes sebelum rilis (ubuntu:22.04)`, `(ubuntu:24.04)`, `(debian:bookworm)`
+  success; `Tag & rilis otomatis` success dengan langkah:
+  `Checkout pada commit tag` success, `Validasi tag dan VERSION` success,
+  `Verifikasi checksum installer` success, `Terbitkan GitHub Release dari tag`
+  success.
+- Release https://github.com/Iky969/osw-wrapper-linux/releases/tag/v0.1.4
+  terbit (bukan draft/prerelease) dengan aset `install.sh` (13.045 byte) dan
+  `install.sh.sha256` (77 byte); unduhan ulang lolos `sha256sum -c` dan aset
+  installer berisi `DEFAULT_VERSION="0.1.4"`.
+- `osw self-update` dari instalasi 0.1.3 (aset Release v0.1.3) berhasil ke
+  0.1.4: installer tag diunduh, checksum diverifikasi, config dan
+  `osw version` menjadi 0.1.4.
+
 Hasil rilis 0.1.3 (push `868f21d`, 2026-10-22) — **hijau**:
 
 - `CI` — https://github.com/Iky969/osw-wrapper-linux/actions/runs/39853897169
@@ -490,8 +514,9 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
   `VERSION` == `DEFAULT_VERSION`, `self-update` memakai tag, installer file
   tunggal mengunduh sumber, kelengkapan workflow).
 - `tests/run.sh` sudah berjalan di container `ubuntu:22.04`, `ubuntu:24.04`,
-  dan `debian:bookworm` lewat CI (run `5a426d1`). Smoke di container
-  Void/Alpine/Gentoo belum dijalankan; lihat `tests/smoke.sh` dan
+  dan `debian:bookworm` lewat CI (`5a426d1`, `15f82c4`). Jalur `push` tag
+  `release.yml` sudah diuji nyata untuk `v0.1.4` (run `39856433147`). Smoke di
+  container Void/Alpine/Gentoo belum dijalankan; lihat `tests/smoke.sh` dan
   `docs/ADDING-OS.md`.
 - Belum ada uji nyata `apt-get` dan belum ada uji di OS selain Debian/Ubuntu
   (lingkungan kerja ini Ubuntu 22.04, dijalankan sebagai root di container).
