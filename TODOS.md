@@ -548,6 +548,9 @@ Commit: `fix: _run, RETURN trap, dan dry-run self-update` (2026-10-22).
 - `chore(release): v0.1.3` — `VERSION` dan `DEFAULT_VERSION` menjadi 0.1.3,
   `install.sh.sha256` dihitung ulang, item fallback `bin/osw` dicatat sebagai
   terbuka (bukan sumber mismatch). Tes 67 lulus, 0 gagal.
+- `chore(release): v0.1.4` — `VERSION` dan `DEFAULT_VERSION` menjadi 0.1.4,
+  `install.sh.sha256` dihitung ulang (`37acf1ec…`); `sha256sum -c` lulus, tes
+  67 lulus, shellcheck 0 warning. Tag v0.1.4 belum dibuat pada langkah ini.
 - `ci(release): rilis hanya dari push tag v*` — model B: `release.yml` hanya
   dipicu `push` tag `v*`, gate `needs: test`, validasi tag == `v$VERSION`,
   verifikasi `install.sh.sha256`, dan `gh release create --verify-tag`; tidak
